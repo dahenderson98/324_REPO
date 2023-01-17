@@ -6,7 +6,7 @@ Level 1:
 ./level2 2> /dev/null
 Level 2:
 WvmlqTFW+sn+TgJD9nEifb2cFNaDYaL3
-grep eget level3.txt | awk '{ print $2 }'
+grep eget level3.txt | awk 'NR==1{ print $2 }'
 Level 3:
 eAyRe5KDtiqxDoeqVCABnj6hBMhCR/Bd
 sort level4.txt | tail | awk 'NR==10{print $1}' | base64 -d
