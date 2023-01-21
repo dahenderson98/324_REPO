@@ -1,6 +1,8 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 int main(int argc, char *argv[]) {
 	int pid;
@@ -23,6 +25,7 @@ int main(int argc, char *argv[]) {
 
 		printf("Section B\n");
 		sleep(30);
+		sleep(30);
 		printf("Section B done sleeping\n");
 
 		exit(0);
@@ -32,7 +35,7 @@ int main(int argc, char *argv[]) {
 		/* BEGIN SECTION C */
 
 		printf("Section C\n");
-		sleep(30);
+		//wait(NULL);
 		sleep(30);
 		printf("Section C done sleeping\n");
 
