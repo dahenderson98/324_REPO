@@ -106,6 +106,87 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    char *argv[MAXARGS];
+    int argc = parseline(cmdline, argv); // Parse line into argument vector
+    if (argc <= 0) {
+        //printf("Failed to read line");
+    }
+    
+    int cmds[MAXARGS];
+    int stdin_redir[1024];
+    int stdout_redir[1024];
+    int num_commands = parseargs(argv, cmds, stdin_redir, stdout_redir); // Parse commands and file redirection from argument vector
+    int prev_pipefd[2];
+    int new_pipefd[2];
+    int first_child_pid;
+    int child_pids[num_commands];
+
+    for (int i = 0; i < num_commands; i++) { // Iterate over all commands, executing them
+        // Check for builtin function
+        int was_builtin_cmd = builtin_cmd(argv);
+        if (was_builtin_cmd != 0) {
+            printf("builtin_cmd test returned nonzero: %d", was_builtin_cmd);
+        }
+        
+        if (num_commands > 1 && i < num_commands - 1){ // More commands left, need to pipe
+            if (i > 0){ // Store previous pipe file descriptors if not on first command
+                prev_pipefd[0] = new_pipefd[0];
+                prev_pipefd[1] = new_pipefd[1];
+            }
+            int pipe_ok = pipe(new_pipefd); // Create new pipe to provide input to next command
+            if (pipe_ok != 0){
+                printf("Failed to pipe\n");
+                exit(0);
+            }
+        }
+        int pid = fork();
+        if (i == 0 && num_commands > 1) { // Record pid for first command in pipeline
+            first_child_pid = pid;
+        }
+
+        // Child process
+        if (pid == 0) {
+            // IO Redirection
+            /* Check the command for any input or output redirection, and perform that redirection.
+               Close any open file descriptors that will not be used by the child process. */
+            if (stdin_redir[i] > -1) {
+                // Do stdin redirection, close descriptor for stdin
+                int new_i_file_no = fileno(fopen(argv[stdin_redir[i]],"r"));
+                dup2(new_i_file_no, STDIN_FILENO);
+                close(new_i_file_no);
+            }
+            if (stdout_redir[i] > -1) {
+                // Do stdout redirection, close descriptor for stdout
+                int new_o_file_no = fileno(fopen(argv[stdout_redir[i]], "w"));
+                dup2(new_o_file_no, STDOUT_FILENO);
+                close(new_o_file_no);
+            }
+
+            // Duplicate pipe descriptors if needed
+            if (num_commands > 1) {
+                if (i > 0) { // Point STDIN at previous pipe's read end
+                    dup2(prev_pipefd[0], STDIN_FILENO);
+                    close(prev_pipefd[0]);
+                } 
+                if (i < num_commands - 1){ // Point STDOUT at new pipe's write end
+                    dup2(new_pipefd[1], STDOUT_FILENO);
+                    close(new_pipefd[1]);
+                }
+            }
+            execve(argv[cmds[i]],&argv[cmds[i]],environ); // Execute next command
+        }
+        else {
+            setpgid(pid, first_child_pid); // Ensure all child processes share group id
+            child_pids[i] = pid; // Parent waits for all child processes to change state (complete)
+        }
+    }
+
+    // Reap child processes
+    for (int i = 0; i < num_commands; i++) {
+        waitpid(child_pids[i], NULL, 0);
+    }
+
+    //printf("You entered: %s\n", cmdline);
     return;
 }
 
@@ -233,6 +314,11 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    if (!strcmp(argv[0],"quit")){
+        exit(0);
+    }
+
+
     return 0;     /* not a builtin command */
 }
 
