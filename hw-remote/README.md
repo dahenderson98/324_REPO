@@ -3,7 +3,8 @@
 The purpose of these exercises is to familiarize you with remote copy,
 compilation, and execution, using `scp`, `ssh`, and `tmux`.
 
- 1. Copy `hello.c` to one of the BYU CS lab machines using `scp`:
+ 1. Download [hello.c](hello.c) to your local machine, and then copy it to one
+    of the BYU CS lab machines using `scp`:
 
     ```
     scp hello.c username@schizo.cs.byu.edu:

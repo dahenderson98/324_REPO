@@ -40,16 +40,20 @@ walk-through usage of the reference shell.  You will begin coding in the
 ## Reading
 
 Read the following in preparation for this assignment:
-  - Sections 8.2 - 8.4 and 10.8 - 10.10 in the book
-  - The man pages for the following system calls:
-    - `fork()`
-    - `pipe()`
-    - `dup2()`
-    - `close()`
-    - `waitpid()`
-    - `exec`
-    - `execve()`
-    - `setpgid()`
+
+ - Sections 8.2 - 8.4 and 10.8 - 10.10 in the book
+
+Additionally, man pages for the following are also referenced throughout the
+assignment:
+
+ - `fork()`
+ - `pipe()`
+ - `dup2()`
+ - `close()`
+ - `waitpid()`
+ - `exec`
+ - `execve()`
+ - `setpgid()`
 
 
 ## Resources Provided
@@ -520,7 +524,7 @@ Thus, the process is:
    - Close any open file descriptors that are exclusively for use by the
      child processes.
 
-The processes for all commands in a pipeline should be in the same progress
+The processes for all commands in a pipeline should be in the same process
 group, and that group is different than that of the parent (i.e., the shell).
 The group ID for commands in a pipeline should be the process ID of the first
 command in the pipeline.  Thus, for each command, after `fork()` is called, the

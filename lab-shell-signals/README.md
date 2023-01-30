@@ -6,6 +6,7 @@ implement a real shell, which reads commands from standard input and runs the
 programs specified in those commands.
 
 # Table of Contents
+
 - [Getting Started](#getting-started)
   - [Reading](#reading)
   - [Resources Provided](#resources-provided)
@@ -40,17 +41,21 @@ walk-through usage of the reference shell.  You will begin coding in the
 ## Reading
 
 Read the following in preparation for this assignment:
-  - Sections 8.2 - 8.5
-  - The man pages for the following system calls:
-    - `fork()`
-    - `signal`
-    - `sigaction()`
-    - `sigprocmask()`
-    - `waitpid()`
-    - `exec`
-    - `execve()`
-    - `setpgid()`
-    - `kill()`
+
+ - Sections 8.2 - 8.5
+
+Additionally, man pages for the following are also referenced throughout the
+assignment:
+
+ - `fork()`
+ - `signal`
+ - `sigaction()`
+ - `sigprocmask()`
+ - `waitpid()`
+ - `exec`
+ - `execve()`
+ - `setpgid()`
+ - `kill()`
 
 
 ## Resources Provided

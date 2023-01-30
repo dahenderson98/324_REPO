@@ -16,8 +16,23 @@ repository will be given to you elsewhere and will be referred to in this
 document as "CLASS\_REPO\_PATH" and "PRIVATE\_REPO\_NAME", respectively.
 Additionally, "USERNAME" refers to your GitHub username.
 
+These instructions have first you create your mirrored repository _on a CS lab
+machine_ and optionally create clones of that repository on other machines
+(e.g., a laptop).
 
-## Register an SSH Key for Use with GitHub
+
+# Preparation
+
+Either log on to a BYU CS lab workstation directly or log on remotely via SSH
+using the following command:
+
+```
+ssh username@schizo.cs.byu.edu
+```
+(Replace "username" with your actual CS username)
+
+
+# Register an SSH Key for Use with GitHub
 
 These steps are necessary for you to use SSH to fetch and push your updates
 from and to GitHub.  They should be performed on the machine on which you will
@@ -80,7 +95,7 @@ this again.
     to register your SSH key with your GitHub account.
 
 
-## Create a Mirrored Version of the Class Repository
+# Create a Mirrored Version of the Class Repository
 
 This is a one-time process to create and configure your own private GitHub
 repository for referencing and committing changes.  Your private repository
@@ -127,13 +142,9 @@ will also be a mirror of the upstream class repository.
     ```
 
 
-## Create a Clone of Your Private Repository
+# Create a Clone of Your Private Repository
 
 This is a one-time process to clone the private repository you have created.
-These commands once for every clone that you would like to make of your
-repository.  For example, you might like to clone the repository on a CS lab
-machine and also on a personal machine.  Just remember that you will need to
-keep all clones up-to-date!
 
  1. Clone your new, private repository, which is now a mirror of the upstream
     class repository:
@@ -158,7 +169,17 @@ keep all clones up-to-date!
     and "CLASS\_REPO\_PATH" with the path of the upstream class repository.)
 
 
-## Update Your Mirrored Repository from the Upstream
+# Create Additional Clones of Your Private Repository (Optional)
+
+If you would like to create additional clones of your private repository on
+other machines (e.g., a laptop), follow the instructions for both
+[registering SSH keys](#register-an-ssh-key-for-use-with-github) and
+[creating a clone](#create-a-clone-of-your-private-repository)
+on _that_ machine.  Just remember that you will need to keep all clones
+[up-to-date](#update-your-mirrored-repository-from-the-upstream)!
+
+
+# Update Your Mirrored Repository from the Upstream
 
 Do this every time you would like to pull down the changes from the upstream
 repository and integrate them into your own repository.  Remember that you will
@@ -198,7 +219,7 @@ need to do this for any and all clones that you have made of your repository.
     ```
 
 
-## Commit and push local changes to private repo:
+# Commit and Push Local Changes to Your Private Repo
 
 Do this every time you want to commit changes to the clone of your repository
 and push them out to the repository:

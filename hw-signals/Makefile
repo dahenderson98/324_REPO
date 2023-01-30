@@ -1,5 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -O2 -g
+# Do NOT use -O2 for compiler optimization!
+CFLAGS = -Wall -g
 
 .PHONY: all
 all: signals killer

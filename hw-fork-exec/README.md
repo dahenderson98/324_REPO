@@ -15,10 +15,10 @@ assignment before beginning!
     Additionally, man pages for the following are also referenced throughout
     the assignment:
 
-    - `fork`
-    - `execve`
-    - `pipe`
-    - `dup2`
+    - `fork()`
+    - `execve()`
+    - `pipe()`
+    - `dup2()`
 
  2. Run `make` to build two executables: `fork` and `exec`.  These are programs
     that illustrate the system calls `fork()` and `exec()`.
@@ -107,11 +107,14 @@ want to consider these questions as you go through that part.
 
 In the next few steps, you will be using the `ps` command to examine how the
 process(es) associated with the `fork` program change over time. Because of
-this, you will want to read all of problems 9 through 15 before you start.
+this, you will want to read all of problems 10 through 17 before you start.
 
  10. In the left pane of your tmux window, run the `fork` program.  In the
-     right pane, run the `ps` command, first during the initial 30-second
-     `sleep()` call, then again after "Section B done sleeping" is printed.
+     right pane, run the `ps` command _twice_, according to the following
+     timing:
+     - during the 30 seconds of sleep immediately following the printing of
+       "Section B" and "Section C".
+     - after "Section B done sleeping" is printed.
 
      Use the `-p`, `-o`, and `--forest` options when you run `ps` so that,
      respectively:
@@ -139,7 +142,9 @@ this, you will want to read all of problems 9 through 15 before you start.
      second `ps` command?*
 
  13. Referring to the previous question, *where would this line most
-     appropriately go?*
+     appropriately go?*  Remember, you want the output of the _first_ `ps`
+     command to look the same as it did before; only the output of the second
+     `ps` command should be different.
 
  14. Add the line of code referenced in question 12 to the location referenced
      in question 13.  Then call `make` to re-compiled `fork.c`. (Note that you
@@ -158,17 +163,18 @@ this, you will want to read all of problems 9 through 15 before you start.
     
  16. Modify `fork.c` according to the following:
 
-     - Comment out the line of code you added in question 14, until a later
-       part of the assignment.
+     - Comment out the line of code you added in question 14.
      - Replace the single call to `sleep()` in Section B with two 30-second
        `sleep()` calls, back-to-back.
      - Replace the two back-to-back calls to `sleep()` in Section C with a
        single 30-second `sleep()` call.
 
      Re-`make`, then run `fork` in the left pane of your tmux window.  In the
-     right pane, run the `ps` command with the same options as in question 10,
-     first during the initial 30-second sleep call, then again after "Section C
-     done sleeping" is printed.
+     right pane, run the `ps` command _twice_, with the same options as in
+     question 10, according to the following timing:
+     - during the 30 seconds of sleep immediately following the printing of
+       "Section B" and "Section C".
+     - after "Section C done sleeping" is printed.
 
      *Show the two `ps` commands, each followed by its respective output.*
 
@@ -190,19 +196,24 @@ the same system-wide file description can write to the same open file.
 
  18. Modify `fork.c` according to the following:
 
-     - Un-comment the line you added in question 14.
      - Comment out _all_ calls to `sleep()`.
      - Comment out _all_ `printf()` calls that print "...done sleeping".
      - Before the call to `fork()`, open the file `fork-output.txt` for writing
        (see the man page for `fopen`).
-     - Write "BEFORE FORK\n" to the file before the call to `fork()`.
-     - In section A:
-       - Write "SECTION A (%d)\n" to the file, replacing "%d" with the file
-         descriptor of the newly opened file (see the man page for `fileno()`).
+     - Write "BEFORE FORK\n" to the file before the call to `fork()`.  Call
+       `fflush()` on the file stream immediately after writing.
+
+       Note that any data buffered in a file stream will be copied to the
+       newly-created process created by `fork()` and that any such data would
+       be printed twice--once each process flushes the buffer associated with
+       its own copy of that file stream.  Calling `fflush()` makes sure the
+       buffer is completely flushed before `fork()` to avoid this potentially
+       confusing scenario.
      - In section B, the following, in order:
        - Sleep for 5 seconds
        - write "SECTION B (%d)\n" to the file, replacing "%d" with the
-         file descriptor of the newly opened file.
+         file descriptor of the newly opened file (see the man page for
+         `fileno()`).
      - In section C, do the following, in order:
        - write "SECTION C (%d)\n" to the file you opened, replacing "%d" with
          the file descriptor of the newly opened file.
@@ -216,7 +227,7 @@ the same system-wide file description can write to the same open file.
      Re-`make` and run the newly recompiled `fork`. *Using `cat`, show the
      contents of the `fork-output.txt` file you created.*
 
- 19. *Based on the contents of `fork-output.txt`, Which process(es) write to
+ 19. *Based on the contents of `fork-output.txt`, Which process(es) wrote to
      the file?*
 
  20. *Based on both the contents of `fork-output.txt` and what was written to
@@ -224,13 +235,13 @@ the same system-wide file description can write to the same open file.
      process?  (Hint: See also the "Note the following further points" in the
      man page for `fork()`.)*
 
- 21. Consider the timing of the two `fprintf()` calls made _after_ the call to
-     `fork()` that caused processes to write to `fork-output.txt`.  The
-     execution of one call clearly occurred before the other.
+ 21. Consider the timing of the two `fprintf()` calls made in section B and C,
+     which caused processes to write to `fork-output.txt`.  The execution of
+     one call clearly occurred before the other.
 
      *Based on the content of `fork-output.txt`, did the later process start
      writing to the file at the beginning, or continue where it left off after
-     the last call?  Why?  (Hint: See the section titled "Open file
+     the previous call?  Why?  (Hint: See the section titled "Open file
      descriptions" in the man page for `open(2)`.)*
 
  22. Consider the timing of the `fclose()` call in relation to the later call
@@ -271,7 +282,7 @@ between different processes.
          (see the man page for `read(2)`) into a buffer that you have declared.
          Save the number of bytes read (return value of `read()`), and use that
          value to add a null character after them, so string operations can be
-         performed on it (see the man page for string()).
+         performed on it (see the man page for `string`).
        - Print the string retrieved from `read()` to stdout.  Note that
          `printf()` and `fprintf()` require a null-terminated string, i.e., to
          know where the string ends.  If you have not properly added the null
@@ -293,7 +304,7 @@ child processes and maintained after a call to `exec`.
        runs the `execve()` call with the first command-line argument passed to
        `fork`. The contents you paste should immediately precede the `exit(0)`
        statement called by the child process.
-     - Comment out _all_ remaining calls to `sleep()`.
+     - Comment out the 30-second call to `sleep()` copied over from `exec.c`.
 
      Re-`make` and execute the following:
 
@@ -303,6 +314,12 @@ child processes and maintained after a call to `exec`.
 
      *Show the output from running the pipeline.*
 
+     Note that you might find that the buffer associated with the open file
+     stream (i.e., `FILE *`) is destroyed--as part of the re-initialization
+     of the stack and heap, in connection with `execve()`, before it is ever
+     flushed.  In this case, the statements you wrote to `fork-output.txt`
+     in the child process_before_ calling `execve()` will never make it to the
+     file!  You could fix this by using `fflush()` immediately after `fprintf()`.
 
 # Part 8: File Descriptor Duplication
 
@@ -327,10 +344,3 @@ using `dup2()`.
 
      *Show the output from running the pipeline. Also show the contents of
      `fork-output.txt`.*
-
-     Note that you might find that the buffer associated with the open file
-     stream (i.e., `FILE *`) is destroyed--as part of the re-initialization
-     of the stack and heap, in connection with `execve()`, before it is ever
-     flushed.  In this case, the statements you wrote to the file _before_
-     calling `execve()` will never make it to the file!  You could fix this by
-     using `fflush()` immediately after `fprintf()`.

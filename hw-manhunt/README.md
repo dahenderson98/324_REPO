@@ -45,7 +45,7 @@ Now read through the man page for `man`, especially the sections on "SYNOPSIS",
 Using only the `man` command, answer the following questions.  To answer each
 question, you will need to call `man` with certain arguments and options and
 either inspect the output or read parts of (or search within) the man page that
-is opened.  
+is opened.
 
  1. What are the numbers associated with the manual sections for executable
     programs, system calls, and library calls, respectively?

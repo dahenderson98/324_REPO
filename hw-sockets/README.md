@@ -10,18 +10,24 @@ both communication types.
 # Preparation
 
  1. Read the following in preparation for this assignment:
+
     - Sections 11.1 - 11.4 in the book
-    - The man pages for the following:
-      - `udp`
-      - `tcp`
-      - `send()` / `sendto()` / `write()`
-      - `recv()` / `recvfrom()` / `read()`
+
+    Additionally, man pages for the following are also referenced throughout
+    the assignment:
+
+    - `udp`
+    - `tcp`
+    - `send()` / `sendto()` / `write()`
+    - `recv()` / `recvfrom()` / `read()`
 
  2. Run `make` to build two executables: `client` and `server`.  These are
     programs that will communicate with each other as client and server,
     respectively.
 
- 3. Read the [Strings and Bytes](#strings-and-bytes) section in this document.
+ 3. Review the [Strings, I/O, and Environment](../hw-strings-io-env)
+    assignment.  Reviewing the principles on strings and I/O will greatly help
+    you in this assignment!
 
  4. Start a tmux session.  Create three panes, such that the window looks like
     this:
@@ -40,108 +46,6 @@ both communication types.
     list of machine names
     [here](https://docs.cs.byu.edu/doku.php?id=open-lab-layout)).  You must log
     in to the _same_ lab machine from both "remote" panes.
-
- 6. You will be doing a writeup on this assignment. Call your writeup
-    `sockets.txt`. Make sure you answer any questions/provide outputs as
-    stated in the *bolded* questions/statements (there should be 28 in all).
-
-
-## Strings and Bytes
-
-This section provides some important background related to the nuances between
-"strings" and "bytes" in C.  Both use an array of type `char` and are really
-just arrays of 8-bit integers.  However, the same array of `char` is treated
-very differently when used with a function related to strings (e.g.,
-`strcmp()`, `strcpy()`, `fputs()`, and `fgets()`) than when used with a
-function related to bytes (e.g., `memcmp()`, `memcpy()`, `write()` and
-`read()`).  The string-related functions operate on all characters in the array
-from the begining until a "null" (i.e., value 0) character is reached, whereas
-the byte-related functions operate on all characters, independent of the
-presence of a null character.  That is why the byte-related functions always
-involve a explicit length; it cannot be inferred otherwise.
-
-Consider the following definition:
-
-```c
-char buf[] = { 'a', 'b', 'c', '\0', 'd', 'e', 'f' };
-```
-
-The following two statements result in the equivalent behavior (minus the
-effects of buffering with `fputs()`):
-
-```c
-fputs(buf, stdout);
-write(1, buf, 3);
-```
-
-`fputs()` stops at index 2 (value `'c'`) because of the null value at index 3,
-whereas `write()` could care less about the character with null value.  In
-fact, `write()` will continue writing characters from the start of `buf`, for
-as long you designate.  For example:
-
-```c
-write(1, buf, 7);
-```
-
-or even (gasp!):
-
-```c
-write(1, buf, 15);
-```
-
-Yes, the second one will write memory 8 bytes beyond `buf`.  This is allowed in
-C, but in practice, you will want to check the bounds of your array before
-reading from or writing to that array, so you don't read or write beyond.
-
-Finally, the following declarations result in `buf1` and `buf2` having the
-same exact content as `buf` above:
-
-```c
-char buf1[] = { 97, 98, 99, 0, 100, 101, 102 };
-char buf2[] = { 0x61, 0x62, 0x63, 0x00, 0x64, 0x65, 0x66 };
-```
-
-If that does not make sense to you, remember that a `char` is just an 8-bit
-integer.  When used with string printing operations, an array of `char` is
-presented using its ASCII equivalent (e.g., 97 is a, 98 is b, etc.  See `man
-ascii` for more).  However, no matter how it is _presented_ (`'a'`, `97`,
-`0x67`), it is still just an integer.  
-
-Now, we include the following table, which provides the equivalent functions
-for comparing, copying, and performing I/O operations with strings and bytes:
-
-| String | Bytes |
-| -------| ----- |
-| `strcmp()` | `memcmp()` |
-| `strcpy()` | `memcpy()` |
-| `fputs()` | `write()` |
-| `fgets()` | `read()` |
-| `strlen()` | no equivalent! |
-
-Remember, that string operations should only be used when you _know_ that
-you are working with an array of bytes that has exactly one null character--at
-the end of the sequence.  That will _not_ typically be the case with sockets.
-The primary way, therefore, to keep track of byte lengths with socket
-operations is with the return values of `recv()`/`recvfrom()`/`read()` or
-`send()`/`sendto()`/`write()`.  You _must not_ use `strlen()` to determine how
-many bytes you have read or written!
-
-If you _know_ that the sequence of bytes that have been received from a socket
-should be treated like a string (i.e., they have no null characters), then you
-may then explicitly _add_ a terminating null character.  At this point, you
-may use string operations.  For example:
-
-```c
-nread = read(fd, buf, 512);
-buf[nread] = '\0';
-printf("%s\n", buf);
-```
-
-However, several of the exercises in this assignment, as well as future
-exercises in this class, will have you working with arbitrary binary data--not
-ASCII strings.  In these cases, and more generally, there is no guarantee that
-the bytes you read from the socket do not include a null character.  Thus, even
-if you add a null character at the end, you must not use string operations.
 
 
 # Part 1: UDP Sockets
@@ -244,9 +148,10 @@ null character for this particular program:
 string (i.e., because we wrote the program!).  But `write()` is only concerned
 with bytes, so writing with argument `len` will result in writing one more
 character than the string is long--the null character.  See
-[Strings and Bytes](#strings-and-bytes) for more.  When the server echoes back
-our message, we can use string operations on it--but only because we know that
-it contains the null character that we included when we sent the message.
+[Strings, I/O, and Environment](../hw-strings-io-env) for more.  When the
+server echoes back our message, we can use string operations on it--but only
+because we know that it contains the null character that we included when we
+sent the message.
 
 Now take note of how the number of calls to `send()` on the client relates to
 the number of `recvfrom()` calls on the server.  Let's make some modifications
