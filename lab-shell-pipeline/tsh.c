@@ -108,85 +108,290 @@ void eval(char *cmdline)
 {
     char *argv[MAXARGS];
     int argc = parseline(cmdline, argv); // Parse line into argument vector
-    if (argc <= 0) {
-        //printf("Failed to read line");
-    }
     
     int cmds[MAXARGS];
-    int stdin_redir[1024];
-    int stdout_redir[1024];
-    int num_commands = parseargs(argv, cmds, stdin_redir, stdout_redir); // Parse commands and file redirection from argument vector
-    int prev_pipefd[2];
-    int new_pipefd[2];
-    int first_child_pid;
-    int child_pids[num_commands];
+    int stdin_redir[MAXARGS];
+    int stdout_redir[MAXARGS];
+    // Parse commands and file redirection from argument vector
+    int num_commands = parseargs(argv, cmds, stdin_redir, stdout_redir); 
+    int pipefd[2];
+    //int prev_pipefd[2];
+    //int new_pipefd[2];
+    //int first_child_pid;
+    //int child_pids[num_commands];
 
-    for (int i = 0; i < num_commands; i++) { // Iterate over all commands, executing them
+    //for (int i = 0; i < num_commands; i++) { // Iterate over all commands, executing them
         // Check for builtin function
         int was_builtin_cmd = builtin_cmd(argv);
         if (was_builtin_cmd != 0) {
             printf("builtin_cmd test returned nonzero: %d", was_builtin_cmd);
         }
         
-        if (num_commands > 1 && i < num_commands - 1){ // More commands left, need to pipe
-            if (i > 0){ // Store previous pipe file descriptors if not on first command
+        //if (num_commands > 1 && i < num_commands - 1){ // More commands left, need to pipe
+        if (num_commands > 1){
+            // Store previous pipe file descriptors if not on first command
+            /*
+            if (i > 0){ 
                 prev_pipefd[0] = new_pipefd[0];
                 prev_pipefd[1] = new_pipefd[1];
             }
-            int pipe_ok = pipe(new_pipefd); // Create new pipe to provide input to next command
-            if (pipe_ok != 0){
-                printf("Failed to pipe\n");
+            */
+            // Create new pipe to provide input to next command
+            int pipe_ret = pipe(pipefd);
+            if (pipe_ret < 0){
+                perror("pipe");
                 exit(0);
             }
         }
-        int pid = fork();
-        if (i == 0 && num_commands > 1) { // Record pid for first command in pipeline
-            first_child_pid = pid;
+
+        /// CHILD 1
+
+        int child1_pid = fork();
+        if (child1_pid < 0) {
+            perror("fork");
+            exit(0);
         }
 
-        // Child process
-        if (pid == 0) {
+        // Record pid for first command in pipeline
+        /*
+        if (i == 0 && num_commands > 1) {
+            first_child_pid = pid;
+        }
+        */
+
+        // Child process 1
+        if (child1_pid == 0) {
             // IO Redirection
             /* Check the command for any input or output redirection, and perform that redirection.
                Close any open file descriptors that will not be used by the child process. */
-            if (stdin_redir[i] > -1) {
+            
+            //if (stdin_redir[i] > -1) {
+            if (stdin_redir[0] > -1) {
                 // Do stdin redirection, close descriptor for stdin
-                int new_i_file_no = fileno(fopen(argv[stdin_redir[i]],"r"));
-                dup2(new_i_file_no, STDIN_FILENO);
-                close(new_i_file_no);
+                //int new_i_file_no = fileno(fopen(argv[stdin_redir[i]],"r"));
+                int new_i_file_no = fileno(fopen(argv[stdin_redir[0]],"r"));
+                int dup_ret = dup2(new_i_file_no, STDIN_FILENO);
+                if (dup_ret < 0) {
+                    perror("Duplicate FD");
+                    exit(0);
+                }
+                int close_ret = close(new_i_file_no);
+                if (close_ret < 0) {
+                    perror("close fd");
+                    exit(0);
+                }
             }
-            if (stdout_redir[i] > -1) {
+            //if (stdout_redir[i] > -1) {
+            if (stdout_redir[0] > -1) {
                 // Do stdout redirection, close descriptor for stdout
-                int new_o_file_no = fileno(fopen(argv[stdout_redir[i]], "w"));
-                dup2(new_o_file_no, STDOUT_FILENO);
-                close(new_o_file_no);
+                //int new_o_file_no = fileno(fopen(argv[stdout_redir[i]], "w"));
+                int new_o_file_no = fileno(fopen(argv[stdout_redir[0]], "w"));
+                int dup_ret = dup2(new_o_file_no, STDOUT_FILENO);
+                if (dup_ret < 0) {
+                    perror("duplicate FD");
+                    exit(0);
+                }
+                int close_ret = close(new_o_file_no);
+                if (close_ret < 0) {
+                    perror("close fd");
+                    exit(0);
+                }
             }
 
             // Duplicate pipe descriptors if needed
             if (num_commands > 1) {
-                if (i > 0) { // Point STDIN at previous pipe's read end
-                    dup2(prev_pipefd[0], STDIN_FILENO);
-                    close(prev_pipefd[0]);
-                } 
-                if (i < num_commands - 1){ // Point STDOUT at new pipe's write end
-                    dup2(new_pipefd[1], STDOUT_FILENO);
-                    close(new_pipefd[1]);
+                //if (i > 0) { // Point STDIN at previous pipe's read end
+                    //int dup_ret = dup2(prev_pipefd[1], STDIN_FILENO);
+                    /*
+                    int dup_ret1 = dup2(pipefd[0], STDIN_FILENO);
+                    if (dup_ret1 < 0) {
+                        perror("duplicate pipe read FD");
+                        exit(0);
+                    }
+                    */
+                    int close_ret1 = close(pipefd[0]); // Close pipe read end for child 1
+                    if (close_ret1 < 0) {
+                        perror("close pipe read fd");
+                        exit(0);
+                    }
+                //}
+                //if (i < num_commands - 1){ // Point STDOUT at new pipe's write end
+                    int dup_ret2 = dup2(pipefd[1], STDOUT_FILENO);
+                    if (dup_ret2 < 0) {
+                        perror("duplicate pipe write FD");
+                        exit(0);
+                    }
+                    int close_ret2 = close(pipefd[1]); // Close pipe write end for child 1
+                    if (close_ret2 < 0) {
+                        perror("close pipe write fd");
+                        exit(0);
+                    }
+                    /*
+                    int close_ret2 = close(pipefd[1]); // Close unneeded pipe read end
+                    if (close_ret2 < 0) {
+                        perror("close pipe read fd");
+                        exit(0);
+                    }
+                    */
+                //}
+            }
+            //int exec_ret = execve(argv[cmds[i]],&argv[cmds[i]],environ); // Execute next command
+            int exec_ret = execve(argv[cmds[0]],&argv[cmds[0]],environ); // Execute next command
+            if (exec_ret < 0) {
+                perror("execute command");
+                exit(0);
+            }
+        }
+
+
+        int child2_pid;
+        /// CHILD 2
+
+        if (num_commands > 1) {
+            child2_pid = fork();
+            if (child2_pid < 0) {
+                perror("fork");
+                exit(0);
+            }
+
+            // Record pid for first command in pipeline
+            /*
+            if (i == 0 && num_commands > 1) {
+                first_child_pid = pid;
+            }
+            */
+
+            // Child process
+            if (child2_pid == 0) {
+                // IO Redirection
+                /* Check the command for any input or output redirection, and perform that redirection.
+                Close any open file descriptors that will not be used by the child process. */
+                //if (stdin_redir[i] > -1) {
+                if (stdin_redir[1] > -1) {
+                    // Do stdin redirection, close descriptor for stdin
+                    //int new_i_file_no = fileno(fopen(argv[stdin_redir[i]],"r"));
+                    int new_i_file_no = fileno(fopen(argv[stdin_redir[1]],"r"));
+                    int dup_ret1 = dup2(new_i_file_no, STDIN_FILENO);
+                    if (dup_ret1 < 0) {
+                        perror("Duplicate FD");
+                        exit(0);
+                    }
+                    int close_ret = close(new_i_file_no);
+                    if (close_ret < 0) {
+                        perror("close fd");
+                        exit(0);
+                    }
+                }
+                //if (stdout_redir[i] > -1) {
+                if (stdout_redir[1] > -1) {
+                    // Do stdout redirection, close descriptor for stdout
+                    //int new_o_file_no = fileno(fopen(argv[stdout_redir[i]], "w"));
+                    int new_o_file_no = fileno(fopen(argv[stdout_redir[1]], "w"));
+                    int dup_ret = dup2(new_o_file_no, STDOUT_FILENO);
+                    if (dup_ret < 0) {
+                        perror("duplicate FD");
+                        exit(0);
+                    }
+                    int close_ret = close(new_o_file_no);
+                    if (close_ret < 0) {
+                        perror("close fd");
+                        exit(0);
+                    }
+                }
+
+                // Duplicate pipe descriptors if needed
+                if (num_commands > 1) {
+                    //if (i > 0) { // Point STDIN at previous pipe's read end
+                        //int dup_ret = dup2(prev_pipefd[1], STDIN_FILENO);
+                        int dup_ret1 = dup2(pipefd[0], STDIN_FILENO);
+                        if (dup_ret1 < 0) {
+                            perror("duplicate pipe read FD");
+                            exit(0);
+                        }
+                        int close_ret1 = close(pipefd[0]); // Close pipe read end for child 2
+                        if (close_ret1 < 0) {
+                            perror("close pipe read fd");
+                            exit(0);
+                        }
+                    //}
+                    //if (i < num_commands - 1){ // Point STDOUT at new pipe's write end
+                        /*
+                        int dup_ret2 = dup2(pipefd[0], STDOUT_FILENO);
+                        if (dup_ret2 < 0) {
+                            perror("duplicate pipe write FD");
+                            exit(0);
+                        }
+                        */
+                        int close_ret2 = close(pipefd[1]); // Close pipe write end for child 2
+                        if (close_ret2 < 0) {
+                            perror("close pipe write fd");
+                            exit(0);
+                        }
+                        /*
+                        int close_ret2 = close(pipefd[0]); // Close unneeded pipe read end
+                        if (close_ret2 < 0) {
+                            perror("close pipe read fd");
+                            exit(0);
+                        }
+                        */
+                    //}
+                }
+                //int exec_ret = execve(argv[cmds[i]],&argv[cmds[i]],environ); // Execute next command
+                int exec_ret = execve(argv[cmds[1]],&argv[cmds[1]],environ); // Execute next command
+                if (exec_ret < 0) {
+                    perror("execute command");
+                    exit(0);
                 }
             }
-            execve(argv[cmds[i]],&argv[cmds[i]],environ); // Execute next command
         }
-        else {
-            setpgid(pid, first_child_pid); // Ensure all child processes share group id
-            child_pids[i] = pid; // Parent waits for all child processes to change state (complete)
-        }
-    }
 
+        /// Parent process
+
+        
+            // Close pipe fd's in parent process if pipe was created
+            //if (num_commands > 1 && i < num_commands - 1) {
+            if (num_commands > 1) {
+                //int close_ret1 = close(prev_pipefd[0]);
+                int close_ret1 = close(pipefd[0]);
+                if (close_ret1 < 0) {
+                    perror("close parent_pipe_read_end");
+                }
+                int close_ret2 = close(pipefd[1]);
+                if (close_ret2 < 0) {
+                    perror("close parent_pipe_write_end");
+                }
+            }
+
+            // Ensure all child processes share group id
+            //int setpgid_ret = setpgid(pid, first_child_pid);
+            int setpgid_ret1 = setpgid(child1_pid, child1_pid);
+            if (setpgid_ret1 < 0) {
+                perror("setpgid child1");
+                exit(0);
+            }
+            if (num_commands > 1) {
+                int setpgid_ret2 = setpgid(child2_pid, child1_pid);
+                if (setpgid_ret2 < 0) {
+                    perror("setpgid child2");
+                    exit(0);
+                }
+            }
+            // Parent waits for all child processes to change state (complete)
+            //child_pids[i] = pid;
+            waitpid(child1_pid, NULL, 0);
+            if (num_commands > 1) {
+                waitpid(child2_pid, NULL, 0);
+            }
+        
+    //}
+    
+    /*
     // Reap child processes
     for (int i = 0; i < num_commands; i++) {
         waitpid(child_pids[i], NULL, 0);
     }
+    */
 
-    //printf("You entered: %s\n", cmdline);
     return;
 }
 
@@ -312,12 +517,11 @@ int parseline(const char *cmdline, char **argv)
  * builtin_cmd - If the user has typed a built-in command then execute
  *    it immediately.  
  */
-int builtin_cmd(char **argv) 
+int builtin_cmd(char **argv)
 {
     if (!strcmp(argv[0],"quit")){
         exit(0);
     }
-
 
     return 0;     /* not a builtin command */
 }
