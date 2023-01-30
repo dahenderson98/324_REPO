@@ -108,14 +108,17 @@ void eval(char *cmdline)
 {
     char *argv[MAXARGS];
     int argc = parseline(cmdline, argv); // Parse line into argument vector
+    if (argc <= 0) {
+        return;
+    }
     
-    int cmds[MAXARGS];
+    int cmds[MAXARGS]; 
     int stdin_redir[MAXARGS];
     int stdout_redir[MAXARGS];
     // Parse commands and file redirection from argument vector
     int num_commands = parseargs(argv, cmds, stdin_redir, stdout_redir);
-    int prev_pipefd[2];
-    int new_pipefd[2];
+    int prev_pipefd[2] = { -1, -1 };
+    int new_pipefd[2] = { -1, -1 };
     int first_child_pid;
     int child_pids[num_commands];
 
