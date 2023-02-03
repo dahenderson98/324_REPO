@@ -11,12 +11,14 @@
 int foo;
 int block;
 
+// Print 1, then 2 after four seconds
 void sig_handler1(int signum) {
 	printf("1\n"); fflush(stdout);
 	sleep(4);
 	printf("2\n"); fflush(stdout);
 }
 
+// Print 8, then call kill-sigint (prints 1 and 2), then prints 9
 void sig_handler2(int signum) {
 	printf("8\n"); fflush(stdout);
 	kill(getpid(), SIGINT);
@@ -24,16 +26,22 @@ void sig_handler2(int signum) {
 	printf("9\n"); fflush(stdout);
 }
 
+// Prints the value of foo (output -1 in first example)
 void sig_handler3(int signum) {
 	printf("%d\n", foo); fflush(stdout);
 }
 
+// Sets foo to 6 if it's currently greater than 0
 void sig_handler4(int signum) {
 	if (foo > 0) {
 		foo = 6;
 	}
 }
 
+//document the following code 
+
+// Forks, foo is globally set to child pid from parent, then child exits with 7 as arg, maybe use w sig9?
+// Prints 7 when used alone, prints 7 twice if used w sig9
 void sig_handler5(int signum) {
 	foo = fork();
 	if (foo == 0) {
@@ -41,6 +49,7 @@ void sig_handler5(int signum) {
 	}
 }
 
+// waits for any children to be reaped, prints an error if no child is reaped (NOHANG, doesn't sit waiting)
 void sig_handler6(int signum) {
 	int pid, status;
 	pid = waitpid(-1, &status, WNOHANG);
@@ -49,6 +58,7 @@ void sig_handler6(int signum) {
 	}
 }
 
+// Toggles block variable globally
 void sig_handler7(int signum) {
 	if (block) {
 		block = 0;
@@ -57,6 +67,7 @@ void sig_handler7(int signum) {
 	}
 }
 
+// Reset all flags, reset handler to default action, sets action to SIGTERM
 void sig_handler8(int signum) {
 	struct sigaction sigact;
 
@@ -65,6 +76,7 @@ void sig_handler8(int signum) {
 	sigaction(SIGTERM, &sigact, NULL);
 }
 
+// Waits for child to terminate, prints exit status of child
 void sig_handler9(int signum) {
 	int status;
 	waitpid(-1, &status, 0);
@@ -109,7 +121,7 @@ void install_sig_handlers() {
 	sigaction(SIGCHLD, &sigact, NULL);
 }
 
-void sleep_block_loop() {
+void sleep_block_loop() { // Child runs this
 	int i;
 	sigset_t mask;
 
@@ -126,7 +138,7 @@ void sleep_block_loop() {
 	exit(0);
 }
 
-void start_killer(int pid, char *cmd, char *scenario_num) {
+void start_killer(int pid, char *cmd, char *scenario_num) { // Parent runs this
 	char *args[4];
 	char *env[] = { NULL };
 	char pidstr[32];

@@ -26,22 +26,75 @@ int main(int argc, char *argv[]) {
 	// this one and, more importantly, to the child.
 	sigaction(SIGINT, &sigact, NULL);
 
+	/*
+	handler1: kill(pid, SIGHUP);
+	handler1: kill(pid, SIGINT);
+	handler2: kill(pid, SIGQUIT);
+	handler3: kill(pid, SIGTERM);
+	handler4: kill(pid, 30);
+	handler5: kill(pid, 10);
+	handler6: kill(pid, 16);
+	handler7: kill(pid, 31);
+	handler8: kill(pid, 12);
+	handler9: kill(pid, SIGCHLD);
+	*/
+
 	switch (scenario[0]) {
-	case '0':
+	case '0':	// done
 		kill(pid, SIGHUP);
 		sleep(1);
 		break;
-	case '1':
+	case '1':	// done
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default
+		sleep(1);
 		break;
-	case '2':
+	case '2':	// done
+		kill(pid, SIGHUP); // 1
+		sleep(1);
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default
+		sleep(1);
 		break;
-	case '3':
+	case '3':	// done
+		kill(pid, SIGHUP); // 1
+		sleep(1);
+		kill(pid, SIGHUP); // 1
+		sleep(4);
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default
+		sleep(1);
 		break;
 	case '4':
+		kill(pid, SIGHUP); // 1
+		sleep(1);
+		kill(pid, SIGINT); // 1 replaced by default
+		sleep(1);
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default
+		sleep(1);
 		break;
 	case '5':
+		kill(pid, SIGHUP); // 1
+		sleep(0.5);
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default
+		sleep(1);
 		break;
-	case '6':
+	case '6': // broken
+		kill(pid, SIGHUP);  // 1\n2
+		sleep(1);
+		kill(pid,10);		// 7
+		sleep(2);
+		kill(pid, 31); 		// toggle block
+		sleep(1);
+		kill(pid, 16);      // 10
+		sleep(1);
 		break;
 	case '7':
 		break;
