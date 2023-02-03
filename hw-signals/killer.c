@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
 	case '1':	// done
 		kill(pid, 12); // 8 returns handlers to default
 		sleep(1);
-		kill(pid, SIGTERM); // 3 replaced by default
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
 	case '2':	// done
@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
 		sleep(1);
 		kill(pid, 12); // 8 returns handlers to default
 		sleep(1);
-		kill(pid, SIGTERM); // 3 replaced by default
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
 	case '3':	// done
@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
 		sleep(4);
 		kill(pid, 12); // 8 returns handlers to default
 		sleep(1);
-		kill(pid, SIGTERM); // 3 replaced by default
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
 	case '4':
@@ -75,25 +75,26 @@ int main(int argc, char *argv[]) {
 		sleep(1);
 		kill(pid, 12); // 8 returns handlers to default
 		sleep(1);
-		kill(pid, SIGTERM); // 3 replaced by default
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
 	case '5':
 		kill(pid, SIGHUP); // 1
-		sleep(0.5);
 		kill(pid, 12); // 8 returns handlers to default
 		sleep(1);
-		kill(pid, SIGTERM); // 3 replaced by default
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
 	case '6': // broken
-		kill(pid, SIGHUP);  // 1\n2
+		kill(pid, SIGHUP); // 1
 		sleep(1);
-		kill(pid,10);		// 7
-		sleep(2);
-		kill(pid, 31); 		// toggle block
+		kill(pid, 10); // 5 prints 7
+		sleep(4);
+		kill(pid, 16); // 6 waits, fails, then prints errno 10
 		sleep(1);
-		kill(pid, 16);      // 10
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
 	case '7':
