@@ -98,6 +98,16 @@ int main(int argc, char *argv[]) {
 		sleep(1);
 		break;
 	case '7':
+		kill(pid, SIGHUP); // 1
+		sleep(1);
+		kill(pid, 10); // 5 prints 7
+		sleep(4);
+		//kill(pid, 16); // 6 waits, fails, then prints errno 10
+		//sleep(1);
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
+		sleep(1);
 		break;
 	case '8':
 		break;
