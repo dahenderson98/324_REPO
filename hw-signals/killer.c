@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
 		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
-	case '4':
+	case '4':	// done
 		kill(pid, SIGHUP); // 1
 		sleep(1);
 		kill(pid, SIGINT); // 1 replaced by default
@@ -78,15 +78,15 @@ int main(int argc, char *argv[]) {
 		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
-	case '5':
+	case '5': 	// done
 		kill(pid, SIGHUP); // 1
 		kill(pid, 12); // 8 returns handlers to default
 		sleep(1);
 		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
-	case '6': // broken
-		kill(pid, SIGHUP); // 1
+	case '6': 	// done
+		kill(pid, SIGHUP); // 1 prints 1,2
 		sleep(1);
 		kill(pid, 10); // 5 prints 7
 		sleep(4);
@@ -97,21 +97,43 @@ int main(int argc, char *argv[]) {
 		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
-	case '7':
-		kill(pid, SIGHUP); // 1
+	case '7': 	// done
+		kill(pid, SIGHUP); // 1 prints 1,2
 		sleep(1);
 		kill(pid, 10); // 5 prints 7
 		sleep(4);
-		//kill(pid, 16); // 6 waits, fails, then prints errno 10
-		//sleep(1);
 		kill(pid, 12); // 8 returns handlers to default
 		sleep(1);
 		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
 		sleep(1);
 		break;
-	case '8':
+	case '8': 	// done
+		kill(pid, SIGHUP); // 1 prints 1,2
+		sleep(1);
+		kill(pid, 31); // 7 blocks signals
+		sleep(1);
+		kill(pid, 10); // 5 tries to print 7
+		sleep(1);
+		kill(pid, 30); // 4 sets foo to 6  
+		sleep(1);
+		kill(pid, SIGTERM); // 3 prints foo 
+		sleep(1);
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
+		sleep(1);
 		break;
-	case '9': 
+	case '9': 	// done
+		kill(pid, 31); // 7 blocks SIGINT
+		sleep(4);
+		kill(pid, SIGQUIT); // 2 prints 8, then calls kill-sigint (prints 1 and 2), then prints 9
+		sleep(1);
+		kill(pid, 31); // 7 unblocks SIGINT
+		sleep(4);
+		kill(pid, 12); // 8 returns handlers to default
+		sleep(1);
+		kill(pid, SIGTERM); // 3 replaced by default SIGTERM
+		sleep(1);
 		break;
 
 	}
