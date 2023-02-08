@@ -61,6 +61,8 @@ int main(int argc, char *argv[]) {
 	case '3':	// done
 		kill(pid, SIGHUP); // 1
 		sleep(1);
+		kill(pid, 31); // 7 blocks SIGINT
+		sleep(1);
 		kill(pid, SIGHUP); // 1
 		sleep(4);
 		kill(pid, 12); // 8 returns handlers to default
