@@ -8,7 +8,10 @@
    version="1.1"
    id="svg896"
    sodipodi:docname="redirection.svg"
-   inkscape:version="1.2.1 (9c6d41e, 2022-07-14)"
+   inkscape:version="1.2.2 (b0a84865, 2022-12-01)"
+   inkscape:export-filename="redirection.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
@@ -25,12 +28,12 @@
      inkscape:document-units="mm"
      showgrid="true"
      inkscape:zoom="0.914906"
-     inkscape:cx="349.2162"
+     inkscape:cx="350.30921"
      inkscape:cy="400.0411"
      inkscape:window-width="1406"
-     inkscape:window-height="940"
-     inkscape:window-x="324"
-     inkscape:window-y="194"
+     inkscape:window-height="830"
+     inkscape:window-x="64"
+     inkscape:window-y="37"
      inkscape:window-maximized="0"
      inkscape:current-layer="layer1">
     <inkscape:grid
@@ -432,7 +435,7 @@
          style="font-size:4.93889px;text-align:end;text-anchor:end;stroke-width:0.264583"
          x="48.855816"
          y="131.97882"
-         id="tspan3793">pgid=pid2</tspan><tspan
+         id="tspan3793">pgid=pid3</tspan><tspan
          sodipodi:role="line"
          style="font-size:4.93889px;text-align:end;text-anchor:end;stroke-width:0.264583"
          x="48.855816"

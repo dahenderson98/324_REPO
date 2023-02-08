@@ -427,20 +427,33 @@ the process is:
  - Fork a child process.
  - In the child process:
    - Check the command for any input or output redirection, and perform that
-     redirection.
+     redirection.  This involves opening the file for reading or writing,
+     respectively, and duplicating the newly-opened file descriptor onto
+     standard input or standard output, respectively.
+
+     Note that for input redirection, you should open the file with mode `"r"`
+     or `O_RDONLY` for `fopen()` or `open()`, respectively, and for output
+     redirection, you should open the file with mode `"w"` or
+     `O_WRONLY | O_CREAT | O_TRUNC` for `fopen()` or `open()`, respectively.
+     For output redirection, this creates a file that does not already exist or
+     truncates a file that does exist.
    - Close any open file descriptors that will not be used by the child
-     process.  This includes file descriptors that were created as part of
-     input/output redirection.
+     process.  Ultimately, only the file descriptors for standard input (0),
+     standard output (1), and standard error (2) should remain open at this
+     point.  An illustration of what the final product should look like when a
+     file is opened for output redirection is shown below:
+
+     <img src="redirection.png" width="800">
+
+     Note that even the file descriptors that have been opened as part of
+     input/output redirection should be closed, _after_ they have been
+     duplicated onto standard input or standard output, respectively.
 
      Remember that when multiple file descriptors are referencing the same
      system-wide file description entry (e.g., after a call to `fork()` or
      `dup2()`), calling `close()` on only one of them will not close the
      file--only de-reference the file description entry.  So leave open only
-     the file descriptors that you need; it is safe to close all others.  An
-     illustration of what the final product should look like when a file is
-     opened for output redirection is shown below:
-
-     <img src="redirection.png" width="800">
+     the file descriptors that you need; it is safe to close all others.
    - Run the executable in the context of the child process using `execve()`.
  - In the parent process:
    - Put the child process in its own process group, for which the group ID is
@@ -490,32 +503,37 @@ child processes.
 Thus, the process is:
 
  - Create a pipe.
- - Fork two child process.
+ - Fork two child processes.
  - In each child process:
    - Check the command for any input or output redirection, and perform that
-     redirection.
-   - Duplicate the appropriate pipe file descriptors to enable the standard
-     output of one process to be piped to the standard input of the other
-     process.
+     redirection using the methodology described previously.
+   - Duplicate the file descriptor associated with the write end of the pipe
+     onto the standard output of the left-side process and the file descriptor
+     associated with the read end of the pipe onto the standard input of the
+     right-hand process.
    - Close any open file descriptors that will not be used by the child
-     process.  This includes file descriptors that were created as part of
-     input/output redirection, whether for input/files or pipes.  It also
-     includes having the process writing to the pipe closing the read end of
-     the pipe, and the process reading from the pipe closing the write end of
-     the pipe.
+     process.  Ultimately, only the file descriptors for standard input (0),
+     standard output (1), and standard error (2) should remain open at this
+     point.  An illustration of what a pipeline with two commands, as well as
+     both input and output redirection is shown below:
+
+     <img src="pipeline-2cmds.png" width="800">
+
+     Note that even the file descriptors that were created as part of
+     input/output redirection or pipes should be closed, _after_ they have been
+     duplicated onto the appropriate descriptors -- whether standard input or
+     standard output.  Additionally, the left-side process (i.e., the one
+     _writing_ to the pipe) should close the _read_ end of the pipe, and the
+     right-side process (i.e., the one _reading_ from the pipe) should close
+     the _write_ end of the pipe.
 
      Remember that when multiple file descriptors are referencing the same
      system-wide file description entry (e.g., after a call to `fork()` or
      `dup2()`), calling `close()` on only one of them will not close the
      file--only de-reference the file description entry.  So leave open only
-     the file descriptors that you need; it is safe to close all others.  An
-     illustration of what a pipeline with two commands, as well as both input
-     and output redirection is shown below:
+     the file descriptors that you need; it is safe to close all others.
 
-     <img src="pipeline-2cmds.png" width="800">
-
-     Note that all file descriptors have been closed, except those that are in
-     use.  If your pipeline hangs, it is likely because some descriptors have
+     If your pipeline hangs, it is likely because some descriptors have
      accidentally been left open. Check, check, and check again.
    - Run the executable in the context of the child process using `execve()`.
  - In the parent process:
@@ -605,9 +623,10 @@ and output redirection is shown below:
 
 <img src="pipeline.png" width="800">
 
-Note that all file descriptors have been closed, except those that are in use.
-Again, if your pipeline hangs, it is likely because some descriptors have
-accidentally been left open. Check, check, and check again.
+Note that just as before, file descriptors other than 0, 1, and 2 should be
+closed--after all duplication has taken place.  Again, if your pipeline hangs,
+it is likely because some descriptors have accidentally been left open. Check,
+check, and check again.
 
 Just as with the two-command pipeline, a shell handling a pipeline with an
 arbitrary number of commands must: 1) wait for each child process after _all_
