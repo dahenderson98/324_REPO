@@ -217,27 +217,31 @@ each of these members.
 ## Reading
 
 Read the following in preparation for this assignment:
-  - Sections 11.1 - 11.6, 12.1 - 12.2 in the book
-  - The man pages for the following:
-    - `epoll` - general overview of epoll, including detailed examples
-    - `epoll_create1` - shows the usage of the simple function to create an
-      epoll instance
-    - `epoll_ctl` - shows the definition of the `epoll_data_t` and
-      `struct epoll_event` structures, which are used by both `epoll_ctl()` and
-      `epoll_wait()`.  Also describes the event types with which events are
-      registered to an epoll instance, e.g., for reading or writing, and which
-      type of triggering is used (for this lab you will use edge-triggered
-      monitoring).
-    - `epoll_wait` - shows the usage of the simple `epoll_wait()` function,
-      including how events are returned and how errors are indicated,
-    - `fnctl()`
-    - `socket`
-    - `socket()`
-    - `send()`
-    - `recv()`
-    - `bind()`
-    - `connect()`
-    - `getaddrinfo()`
+
+ - Sections 11.1 - 11.6, 12.1 - 12.2 in the book
+ - `epoll` - general overview of epoll, including detailed examples
+
+Additionally, man pages for the following are referenced throughout the
+assignment:
+
+ - `epoll_create1` - shows the usage of the simple function to create an
+   epoll instance
+ - `epoll_ctl` - shows the definition of the `epoll_data_t` and
+   `struct epoll_event` structures, which are used by both `epoll_ctl()` and
+   `epoll_wait()`.  Also describes the event types with which events are
+   registered to an epoll instance, e.g., for reading or writing, and which
+   type of triggering is used (for this lab you will use edge-triggered
+   monitoring).
+ - `epoll_wait` - shows the usage of the simple `epoll_wait()` function,
+   including how events are returned and how errors are indicated,
+ - `fnctl()`
+ - `socket`
+ - `socket()`
+ - `send()`
+ - `recv()`
+ - `bind()`
+ - `connect()`
+ - `getaddrinfo()`
 
 
 ## epoll Echo Server Example
@@ -367,6 +371,11 @@ Replace `port` with the port returned by `./port-for-user.pl`.
 
 Now, from another terminal on the same machine, run the following:
 
+(NOTE: the commands below are expected to _fail_ at this point, in part because
+your proxy server implementation is incomplete.  The commands are merely a way
+to see how your proxy server behaves with its current, incomplete
+functionality.)
+
 ```bash
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
 ```
@@ -399,6 +408,8 @@ an event corresponds to an existing client.
 
 Re-build and re-start your proxy, and make sure it works properly when you run
 the following:
+
+(NOTE: the commands below are still expected to fail.)
 
 ```bash
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
@@ -442,10 +453,14 @@ for the `SEND_REQUEST` and `READ_RESPONSE` states, as specified in the
 
 Now would be a good time to test with the following commands:
 
+(NOTE: the commands below are still expected to fail.)
+
 ```bash
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
 $ ./slow-client.py -x http://localhost:port/ -b 1 "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
 ```
+
+(Replace `port` with the port on which your proxy server is listening.)
 
 Just as before, you should not only observe that the proxy server successfully
 issues the request and receives the response from the HTTP server, but also
@@ -469,6 +484,7 @@ At this point you should be able to pass:
    ```bash
    $ ./driver.py -b 20 -c 75 epoll
    ```
+
 
 # Testing
 
@@ -502,7 +518,7 @@ but use "epoll" in place of "threadpool" whenever the driver is used.
 Your score will be computed out of a maximum of 100 points based on the
 following distribution:
 
- - 20 for basic HTTP proxy functionality
+ - 20 for basic HTTP proxy functionality with epoll
  - 75 for handling concurrent HTTP proxy requests using epoll
  - 5 - compiles without any warnings (this applies to your proxy code, not
    `tiny` and friends).
@@ -516,11 +532,4 @@ $ ./driver.py -b 20 -c 75 epoll
 
 # Submission
 
-Run the following command to `tar` your file(s):
-
-```bash
-$ make handin
-```
-
-This creates a `.tar` file in the parent directory.  Upload this file to
-the assignment page on LearningSuite.
+Upload `proxy.c` to the assignment page on LearningSuite.

@@ -190,9 +190,7 @@ For each run, record both:
 
  9. Consider Amdahl's Law:
 
-    <code>
-    T<sub>α</sub> = pT/α + (1-p)T
-    </code>
+    <code>T<sub>α</sub> = pT/α + (1-p)T</code>
 
     In this case `α` is speedup of the parallel region only, and `p` is the
     fraction of original run time that is parallelizable.

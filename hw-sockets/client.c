@@ -1,10 +1,11 @@
-#include <sys/types.h>
-#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 
 #define BUF_SIZE 500
 
@@ -17,6 +18,21 @@ int main(int argc, char *argv[]) {
 	char buf[BUF_SIZE];
 	int hostindex;
 	int af;
+
+	int addr_fam;
+	socklen_t addr_len;
+
+	struct sockaddr_in remote_addr_in;
+	struct sockaddr_in6 remote_addr_in6;
+	struct sockaddr *remote_addr;
+	char remote_addr_str[INET6_ADDRSTRLEN];
+	unsigned short remote_port;
+
+	struct sockaddr_in local_addr_in;
+	struct sockaddr_in6 local_addr_in6;
+	struct sockaddr *local_addr;
+	char local_addr_str[INET6_ADDRSTRLEN];
+	unsigned short local_port;
 
 	if (argc < 3 ||
 		((strcmp(argv[1], "-4") == 0 || strcmp(argv[1], "-6") == 0) &&
@@ -71,7 +87,57 @@ int main(int argc, char *argv[]) {
 		if (sfd == -1)
 			continue;
 
-		if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1)
+		/* Retrieve the values for the following, from the current
+		 * result (rp) of getaddrinfo():
+		 *
+		 * addr_fam: the address family in use (applies to both local
+		 *         and remote address).  This is either AF_INET (IPv4)
+		 *         or AF_INET6 (IPv6).
+		 * addr_len: length of the structure used to hold the address
+		 *         (different for IPv4 and IPv6)
+		 * remote_addr_in or remote_addr_in6: remote address and remote
+		 *         port for IPv4 (addr_fam == AF_INET) or
+		 *         IPv6 (addr_fam == AF_INET6).  The address is stored
+		 *         in sin_addr (IPv4) or sin6_addr (IPv6), and the
+		 *         port is stored in sin_port (IPv4) or sin6_port
+		 *         (IPv6).
+		 * remote_addr_str: string representation of remote IP address
+		 * remote_addr: a struct sockaddr * that points to
+		 *         remote_addr_in (where addr_fam == AF_INET) or
+		 *         remote_addr_in6 (where addr_fam == AF_INET6)
+		 * local_addr: a struct sockaddr * that points to
+		 *         local_addr_in (where addr_fam == AF_INET) or
+		 *         local_addr_in6 (where addr_fam == AF_INET6)
+		 *         (Note that the *value* of local_addr_in or
+		 *         local_addr_in6 will be populated later; for now
+		 *         local_addr is simply assigned to point to one of
+		 *         them.)
+		 * remote_port: the remote port
+		 * */
+		addr_fam = rp->ai_family;
+		addr_len = rp->ai_addrlen;
+		if (addr_fam == AF_INET) {
+			remote_addr_in = *(struct sockaddr_in *)rp->ai_addr;
+			inet_ntop(addr_fam, &remote_addr_in.sin_addr,
+					remote_addr_str, addr_len);
+			remote_port = ntohs(remote_addr_in.sin_port);
+			remote_addr = (struct sockaddr *)&remote_addr_in;
+			local_addr = (struct sockaddr *)&local_addr_in;
+		} else {
+			remote_addr_in6 = *(struct sockaddr_in6 *)rp->ai_addr;
+			inet_ntop(addr_fam, &remote_addr_in6.sin6_addr,
+					remote_addr_str, addr_len);
+			remote_port = ntohs(remote_addr_in6.sin6_port);
+			remote_addr = (struct sockaddr *)&remote_addr_in6;
+			local_addr = (struct sockaddr *)&local_addr_in6;
+		}
+		printf("Connecting to %s:%d (family: %d, len: %d)\n",
+				remote_addr_str, remote_port, addr_fam,
+				addr_len);
+
+		/* if connect is successful, then break out of the loop; we
+		 * will use the current address */
+		if (connect(sfd, remote_addr, addr_len) != -1)
 			break;  /* Success */
 
 		close(sfd);
@@ -83,6 +149,33 @@ int main(int argc, char *argv[]) {
 	}
 
 	freeaddrinfo(result);   /* No longer needed */
+
+	/* Retrieve the following values using getsockname()
+	 *
+	 * local_addr_in or local_addr_in6: local address and local
+	 *         port for IPv4 (addr_fam == AF_INET) or
+	 *         IPv6 (addr_fam == AF_INET6).  The address is stored
+	 *         in sin_addr (IPv4) or sin6_addr (IPv6), and the
+	 *         port is stored in sin_port (IPv4) or sin6_port
+	 *         (IPv6).  Note that these are populated with the call
+	 *         to getsockname() because local_addr points to
+	 *         struct corresponding to the address family.
+	 * local_addr_str: string representation of local IP address
+	 * local_port: the local port
+	 * */
+	s = getsockname(sfd, local_addr, &addr_len);
+	if (addr_fam == AF_INET) {
+		inet_ntop(addr_fam, &local_addr_in.sin_addr,
+				local_addr_str, addr_len);
+		local_port = ntohs(local_addr_in.sin_port);
+	} else {
+		inet_ntop(addr_fam, &local_addr_in6.sin6_addr,
+				local_addr_str, addr_len);
+		local_port = ntohs(local_addr_in6.sin6_port);
+	}
+	printf("Local socket info: %s:%d (family: %d, len: %d)\n",
+			local_addr_str, local_port, addr_fam,
+			addr_len);
 
 	/* SECTION C - interact with server; send, receive, print messages */
 

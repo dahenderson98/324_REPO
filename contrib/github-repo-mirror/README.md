@@ -183,7 +183,7 @@ on _that_ machine.  Just remember that you will need to keep all clones
 
 Do this every time you would like to pull down the changes from the upstream
 repository and integrate them into your own repository.  Remember that you will
-need to do this for any and all clones that you have made of your repository.
+need to do this for any and all clones
 [that you have made of your repository](#create-a-clone-of-your-private-repository).
 
 

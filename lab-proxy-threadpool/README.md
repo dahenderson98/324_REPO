@@ -68,23 +68,26 @@ your concurrency approach to use a threadpool.
 ## Reading
 
 Read the following in preparation for this assignment:
+
   - Sections 11.1 - 11.6, 12.1, and 12.3 - 12.5 in the book
-  - The man pages for the following:
-    - `tcp`
-    - `socket`
-    - `socket()`
-    - `send()`
-    - `recv()`
-    - `bind()`
-    - `connect()`
-    - `getaddrinfo()`
-    - `pthread_create()`
-    - `pthread_detach()`
-    - `pthread_self()`
-    - `sem_init()`
-    - `sem_post()`
-    - `sem_wait()`
-    - `sem_overview()` (unnamed semaphores)
+Additionally, man pages for the following are referenced throughout the
+assignment:
+
+ - `tcp`
+ - `socket`
+ - `socket()`
+ - `send()`
+ - `recv()`
+ - `bind()`
+ - `connect()`
+ - `getaddrinfo()`
+ - `pthread_create()`
+ - `pthread_detach()`
+ - `pthread_self()`
+ - `sem_init()`
+ - `sem_post()`
+ - `sem_wait()`
+ - `sem_overview()` (unnamed semaphores)
 
 
 # Instructions
@@ -136,12 +139,39 @@ headers; there will be no request body.
  - `char *headers`: a string to which the headers (i.e., all lines after the
    first line) are copied.
 
+Your `parse_request()` method does not have to support every possible use case.
+For the purposes of this lab, you can use the following simplified rules:
+
+ - For an HTTP request:
+   - All characters from the beginning of the string up to (but not including)
+     the first space comprise the _request method_.
+   - All characters between the first space and the second space
+     (non-inclusive) comprise the _URL_.
+   - All characters after the first end-of-header sequence `\r\n\r\n` comprise
+     the _headers_.  You do not need to further parse the headers.
+ - For the URL extracted from the HTTP request:
+   - If there is a colon `:` in the URL _after_ the `://`, then:
+     - the digits immediately following the colon comprise the _port_;
+     - characters between the `://` and the colon (non-inclusive) comprise the
+       _hostname_; and
+     - all characters after the port comprise the _path_.
+   - Otherwise:
+     - the _port_ is 80 (the default);
+     - characters between the `://` and the next slash (`/`), non-inclusive,
+       comprise the _hostname_; and
+     - all characters after the hostname (including the first slash), comprise
+       the _path_.
+
+       Note that the query string (the key-value pairs following `?`) can be
+       included as part of the path for this lab.
+
 
 ### Testing
 
 The `test_parser()` function was built for you to test the HTTP parsing code.
-It provides three scenarios: complete HTTP request with default port; complete
-HTTP request with explicit port and query string; and incomplete HTTP request.
+It provides four scenarios: complete HTTP request with default port; complete
+HTTP request with explicit port and query string; complete request with dotless
+hostname, and incomplete HTTP request.
 
 Compile your proxy code by running the following:
 
@@ -234,6 +264,11 @@ Replace `port` with the port returned by `./port-for-user.pl`.
 
 Now, from another terminal on the same machine, run the following:
 
+(NOTE: the commands below are expected to _fail_ at this point, in part because
+your proxy server implementation is incomplete.  The commands are merely a way
+to see how your proxy server behaves with its current, incomplete
+functionality.)
+
 ```bash
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu:5599/cgi-bin/slowsend.cgi?obj=lyrics"
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
@@ -257,6 +292,8 @@ request.  If it does not, now is the time to fix it.
 
 Now try the following:
 
+(NOTE: the commands below are still expected to fail.)
+
 ```bash
 $ ./slow-client.py -x http://localhost:port/ -b 1 "http://www-notls.imaal.byu.edu:5599/cgi-bin/slowsend.cgi?obj=lyrics"
 $ ./slow-client.py -x http://localhost:port/ -b 1 "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
@@ -279,18 +316,20 @@ Now that you proxy server has received the entire HTTP request, you can modify
 your `handle_client()` code to create the HTTP request to send to the server.
 The HTTP request your proxy received from the client looked something like
 this:
+
 ```
 GET http://www-notls.imaal.byu.edu:5599/cgi-bin/slowsend.cgi?obj=lyrics HTTP/1.1
 Host: www-notls.imaal.byu.edu:5599
 User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0
 
 ```
+
 (Some things will differ, like the "User-Agent" header, which identfies your
 client, and the port used.)
 
 It is appropriate to send a *full url* to a *proxy* server, but when sending
-directly to the *HTTP server*, sending just the *path* (and query string) is
-appropriate.  Also, the protocol should be changed to HTTP/1.0, and the
+directly to the *HTTP server*, sending just the *path* (including query string)
+is appropriate.  Also, the protocol should be changed to HTTP/1.0, and the
 "Connection" and "Proxy-Connection" headers added.  These further enforce
 HTTP/1.0 behavior, which is discussed in the
 [next section](#communicating-with-the-http-server).
@@ -340,12 +379,15 @@ Use `printf()` and/or `print_bytes()` to print out the HTTP request you
 created.  Then re-build and re-start your proxy, and make sure it works
 properly when you run the following:
 
+(NOTE: the commands below are still expected to fail.)
+
 ```bash
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu:5599/cgi-bin/slowsend.cgi?obj=lyrics"
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
 $ ./slow-client.py -x http://localhost:port/ -b 1 "http://www-notls.imaal.byu.edu:5599/cgi-bin/slowsend.cgi?obj=lyrics"
 $ ./slow-client.py -x http://localhost:port/ -b 1 "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
 ```
+
 (Replace `port` with the port on which your proxy server is listening.)
 
 
@@ -377,21 +419,26 @@ server.  Modify your `handle_client()` function again:
    higher) might exchange several request-response transactions over the same
    TCP connection, which case, the "Content-Length" header (and/or other modern
    conventions) would need to be consulted to determine when the server was
-   finished sending a given response.  But again, for *thiis* lab, that is not
+   finished sending a given response.  But again, for *this* lab, that is not
    necessary.
  - Close the socket associated with the HTTP server.
 
-The re-build and re-start your proxy, and make sure it works properly when you
-run the following:
+Use `printf()` and/or `print_bytes()` to print out the HTTP response you
+receive from the server.  Then re-build and re-start your proxy, and make sure
+it works properly when you run the following:
+
+(NOTE: the commands below are still expected to fail.)
 
 ```bash
 $ curl -x http://localhost:port/ "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
 $ ./slow-client.py -x http://localhost:port/ -b 1 "http://www-notls.imaal.byu.edu/cgi-bin/slowsend.cgi?obj=lyrics"
 ```
+
 (Replace `port` with the port on which your proxy server is listening.  Also
 note that the request to `www-notls.imaal.byu.edu:5599` is not included in
 these latest tests. That URL was only used to make sure your proxy could parse
-a non-standard port, which functionality will be useful later.)
+a non-standard port, which functionality will be useful later.  However,
+www-notls.imaal.byu.edu has no service listening on port 5599!)
 
 
 ### Returning the HTTP Response
@@ -698,7 +745,7 @@ following distribution:
  - 5 - compiles without any warnings (this applies to your proxy code, not
    `tiny` and friends).
 
-Run the following to check your implementation:
+Run the following to check your implementation on one of the CS lab machines:
 
 ```b
 $ ./driver.py -b 50 -c 45 threadpool
@@ -707,11 +754,4 @@ $ ./driver.py -b 50 -c 45 threadpool
 
 # Submission
 
-Run the following command to `tar` your file(s):
-
-```bash
-$ make handin
-```
-
-This creates a `.tar` file in the parent directory.  Upload this file to
-the assignment page on LearningSuite.
+Upload `proxy.c` to the assignment page on LearningSuite.

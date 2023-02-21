@@ -7,6 +7,7 @@ CGI.
 # Preparation
 
 Read the following in preparation for this assignment:
+
   - Section 11.5.4 in the book
 
 
@@ -43,12 +44,12 @@ Remember the following:
    made available to the CGI program by the HTTP server.
 
 You should recall that there is a way that you can test your CGI program
-*without* a Web server.  See the
-[catmatch assignment](../hw-catmatch) for example.
+*without* a Web server.  See
+[Strings, IO, and Environment](../hw-strings-io-env) and
+[BYU Bandit](../hw-byu-bandit) for examples.
 
-Note: this whole program will be much simpler than you might think--perhaps
-even simpler than the program you wrote for your first homework assignment.
-But you might need to review CGI from the book and slides.
+Note: this whole program will be much simpler than you might think, but you
+might need to review CGI from the book and slides.
 
 
 # Automated Testing

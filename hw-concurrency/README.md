@@ -10,12 +10,16 @@ with that code and analyze what it is doing.
 # Preparation
 
  1. Read the following in preparation for this assignment:
+
     - Sections 12.1 and 12.3 - 12.5 in the book
-    - The man pages for the following:
-      - `pthreads`
-      - `sem_init()`
-      - `sem_wait()`
-      - `sem_post()`
+
+    Additionally, man pages for the following are also referenced throughout the
+    assignment:
+
+    - `pthreads`
+    - `sem_init()`
+    - `sem_wait()`
+    - `sem_post()`
 
  2. Run `make` to build four servers: `echoserveri`, `echoserverp`,
     `echoservert`, and `echoservert_pre`.  These are versions of the echo
@@ -36,8 +40,6 @@ with that code and analyze what it is doing.
     -------------------------------------
     ```
 
- 4. You will be doing a writeup on this assignment.
-
 
 # Part 1: No Concurrency
 
@@ -54,15 +56,15 @@ In each of the three "client" panes run the following:
 ```bash
 $ nc localhost port
 ```
+
 (Replace `port` with the port on which the server program is now listening.)
 
 `localhost` is a domain name that always refers to the local system.  This is
 used in the case where client and server are running on the same system.
 
-
 After all three are running, type some text in the first of the three "client"
-panes, and press enter.  Repeat with the second and third "client" panes.
-In the "analysis" pane run the following:
+panes, and press enter.  Repeat with the second and third "client" panes, _in
+that order_.  In the "analysis" pane run the following:
 
 ```bash
 $ ps -Lo user,pid,ppid,nlwp,lwp,state,ucmd -C echoserveri | grep ^username\\\|USER
@@ -89,34 +91,38 @@ line is a workaround.
 
  1. Show the output from the `ps` command.
 
- 2. From the `ps` output, how many processes and how many threads are running,
-    and why?  Use the PID and LWP to identify different threads or processes.
+ 2. From the `ps` output, how many (unique) processes are running and why?
+    Use the PID and LWP to identify different threads or processes.
 
- 3. Enter `Ctrl`+`c` on the pane in which `nc` was first executed to interrupt
-    it.  What happens to the `nc` processes in the other windows?
+ 3. From the `ps` output, how many (unique) threads are running with each
+    proces and why?  Use the PID and LWP to identify different threads or
+    processes.
+
+ 4. Enter `Ctrl`+`c` on the pane in which `nc` was first executed to interrupt
+    it.  *What happens to the `nc` processes in the other windows and why?*
 
 Stop the server by using `ctrl`+`c` in the appropriate pane.
 
 
 # Part 2: Process-based Concurrency
 
-Repeat the exercises from Part 1 (except question 3), replacing all instances
+Repeat the exercises from Part 1 (except question 4), replacing all instances
 of `echoserveri` with `echoserverp`, including in the `ps` command.  Answer
-questions 1 and 2 for `echoserverp` as questions 4 and 5.
+questions 1 through 3 for `echoserverp` as questions 5 through 7.
 
 
 # Part 3: Simple Thread-based Concurrency
 
-Repeat the exercises from Part 1 (except question 3), replacing all instances
+Repeat the exercises from Part 1 (except question 4), replacing all instances
 of `echoserveri` with `echoservert`, including in the `ps` command.  Answer
-questions 1 and 2 for `echoservert` as questions 6 and 7.
+questions 1 through 3 for `echoservert` as questions 8 through 10.
 
 
 # Part 4: Threadpool-based Concurrency
 
-Repeat the exercises from Part 1 (except question 3), replacing all instances
+Repeat the exercises from Part 1 (except question 4), replacing all instances
 of `echoserveri` with `echoservert_pre`, including in the `ps` command.  Answer
-questions 1 and 2 for `echoservert_pre` as questions 8 and 9.
+questions 1 through 3 for `echoservert_pre` as questions 11 through 13.
 
 
 # Part 5: Producer-Consumer Review
@@ -145,13 +151,13 @@ $ ./echoservert_pre port
 
 Use the output and the code itself to answer the following questions.
 
- 10. How many producer threads are running?
+ 14. How many producer threads are running?
 
- 11. How many consumer threads are running?
+ 15. How many consumer threads are running?
 
- 12. What is the producer thread waiting on?
+ 16. What is/are the producer thread(s) waiting on?
 
- 13. What are the consumer threads waiting on?
+ 17. What is/are the consumer thread(s) waiting on?
 
 In one of the "client" panes run the following:
 
@@ -160,17 +166,14 @@ $ nc localhost port
 ```
 (Replace `port` with the port on which the server program is now listening.)
 
- 14. What event changes the state of the producer (i.e., so it is no longer
+ 18. What event changes the state of the producer (i.e., so it is no longer
      waiting)?
 
- 15. What event changes the state of the consumer(s)?
+ 19. What event changes the state of the consumer(s)?
 
- 16. How many consumers change state?
+ 20. How many consumers change state?
 
- 17. What event changes the state of the consumer(s)? (this question was accidentally a repeat of 15 :))
-
- 18. What is the producer thread now waiting on?
-
+ 21. What is the producer thread now waiting on?
 
 
 Answer the following questions, considering the three concurrency models
@@ -180,16 +183,20 @@ spawning threads on-the-fly (`echoservert`); and threadpool-based
 (e.g., section 12.1.2).
 
 
- 19. Rank the terms in decreasing (most expensive to least expensive) order of
-     run-time cost for handling a given client.
+ 22. Which of the concurrency models has the most expensive _run-time_ cost for
+     handling a given client and why?  Consider only the cost at the time new
+     clients connect and are handled, and ignore any cost associated with
+     server start-up.
 
- 20. Which (one or more) of the three, as implemented in this assignment,
-     has/have an explicit limitation in terms of number of clients that can be
-     handled concurrently?
+ 23. Which of the concurrency models has the most expensive _start-up_ cost and
+     why?  Consider only the cost associated with server start-up, and ignore
+     any cost at the time new clients connect and are handled.
 
- 21. Which (one or more) of the three of the models allow(s) allow sharing of
+ 24. Which (one or more) of the three concurrency models, as implemented in
+     this assignment, has/have an explicit limitation in terms of number of
+     clients that can be handled concurrently and why?  Assume that system
+     resources are unlimited.
+
+ 25. Which (one or more) of the three of the models allow(s) allow sharing of
      memory and data structures without the use of inter-process communication
-     (e.g., pipes, sockets)?
-
- 22. Which (one or more) of the three of the models seems to be the least
-     complex to implement?
+     (e.g., pipes, sockets) and why?

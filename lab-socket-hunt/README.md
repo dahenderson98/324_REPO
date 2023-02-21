@@ -14,7 +14,7 @@ remote port assignment, IPv4 and IPv6, message parsing, and more.
    - [Level 1](#level-1)
    - [Level 2](#level-2)
    - [Level 3](#level-3)
-   - [Level 4](#level-4)
+   - [Level 4 (Extra Credit)](#level-4-extra-credit)
  - [Helps and Hints](#helps-and-hints)
    - [Message Formatting](#message-formatting)
    - [Error Codes](#error-codes)
@@ -42,22 +42,22 @@ Your job is to write the client.
 
 ## Reading
 
-Read the following in preparation for this assignment:
-  - The man pages for the following:
-    - `udp`
-    - `ip`
-    - `ipv6`
-    - `socket`
-    - `socket()`
-    - `send()`
-    - `recv()`
-    - `bind()`
-    - `getaddrinfo()`
-    - `htons()`
-    - `ntohs()`
-    - `getpeername()`
-    - `getsockname()`
-    - `getnameinfo()`
+man pages for the following are referenced throughout the assignment:
+
+ - `udp`
+ - `ip`
+ - `ipv6`
+ - `socket`
+ - `socket()`
+ - `send()`
+ - `recv()`
+ - `bind()`
+ - `getaddrinfo()`
+ - `htons()`
+ - `ntohs()`
+ - `getpeername()`
+ - `getsockname()`
+ - `getnameinfo()`
 
 
 # Instructions
@@ -68,8 +68,8 @@ Read the following in preparation for this assignment:
 First, open `treasure_hunter.c` and look around.  You will note that there are
 two functions and one `#define` statement.
 
-Now, replace `PUT_USERID_HERE` with your numerical user ID, which you can find
-by running `id -u` on a CS lab machine.  From now on you can use `USERID` as an
+Replace `PUT_USERID_HERE` with your numerical user ID, which you can find by
+running `id -u` on a CS lab machine.  From now on you can use `USERID` as an
 integer wherever you need to use your user ID in the code.
 
 Now take a look the `print_bytes()` function.  This function was created to
@@ -138,11 +138,9 @@ The following is an explanation of each field:
  - Byte 1: an integer 0 through 4, corresponding to the *level* of the
    course.  This comes from the command line.
  - Bytes 2 - 5: a `unsigned int` corresponding to the user ID of the user in
-   network byte order (i.e., big-endian, most significant bytes first).  This
-   can be retrieved with `id -u` on one of the CS lab machines.
-
-   Since you used the`#define` directive to map `USERID` to your user ID, you
-   can populate this with the value of `USERID`.
+   network byte order (i.e., big-endian or most significant bytes first).
+   You can populate this with the value of `USERID`, for which you created a
+   `#define` with the appropriate value.
  - Bytes 6 - 7: an `unsigned short` used, along with the user ID and the level,
    to seed the pseudo-random number generator used by the server, in network
    byte order.  This comes from the command line.
@@ -152,7 +150,7 @@ The following is an explanation of each field:
    troubleshooting.
 
 In the `main()` function, declare an array of `unsigned char` to hold the bytes
-that will comprise your request.  Populate that array with values from the
+that will make up your request.  Populate that array with values from the
 command line.
 
 You might be wondering how to populate the array of `unsigned char` with values
@@ -183,12 +181,12 @@ $ ./treasure_hunter server 32400 0 7719
 00: 00 00 00 00  30 39 1E 27  . . . . 0 9 . '
 ```
 
-Beyond the offset (`00`), you can see the byte representing level 0 (`00`), the
-bytes representing the user ID (`00 00 30 39`), and the bytes representing the
-seed (`1E 27`).  Because this message is not "text", there are no useful ASCII
-representations of the byte values, so the output is mostly `.`.  Note that you
-can find the hexadecimal representation of your user ID, the seed, and any
-other integer, by running the following:
+Beyond the offset (`00:`), you can see the byte representing level 0 (`00`),
+the bytes representing the user ID (`00 00 30 39`), and the bytes representing
+the seed (`1E 27`).  Because this message is not "text", there are no useful
+ASCII representations of the byte values, so the output is mostly `.`.  Note
+that you can find the hexadecimal representation of your user ID, the seed, and
+any other integer, by running the following from the command line:
 
 ```bash
 $ printf "%08x\n" 12345
@@ -206,12 +204,58 @@ now know how to *format* the initial message appropriately.
 
 ### Sending and Receiving
 
-Note: you will find working code examples for this section and others in the
-[sockets homework assignment](../hw-sockets).
-
 With your first message created, set up a UDP client socket, with
 `getaddrinfo()` and `socket()`, specifying `AF_INET` and `SOCK_DGRAM` as the
-address family and socket type, respectively.
+address family and socket type, respectively.  Remember that the port passed as
+the second argument (`service`) to `getaddrinfo()` is type `char *`.  Thus, if
+you only have the port as an integer, then you should convert it (not cast
+it!).
+
+It is recommended that you _not_ call `connect()` on the socket but rather save
+the value of the remote address set by `getaddrinfo()` into a
+`struct sockaddr_in` (or a `struct sockaddr_in6` for IPv6) that you have
+declared.  Additionally, because the kernel _implicitly_ assigns the local
+address and port to a given socket when none has been _explicitly_ assigned
+using `bind()`, you will find it useful to learn the port that has been
+assigned using `getsockname()` and save it to a `struct sockaddr_in` (or
+`struct sockaddr_in6` for IPv6) that you have declared.  Finally, you will find
+it useful to keep track of your address family and address length.  Note that
+for levels 0 through 3, your client will only use IPv4 (i.e., `AF_INET`), so
+these values will always be the same.  Nonetheless, keeping track of the
+address family and length is good practice, and you will find it useful in for
+[level 4 (extra credit)](#level-4-extra-credit) when IPv6 is added.
+
+To keep track of all this, you might declare variables like the following:
+
+```c
+	int addr_fam;
+	socklen_t addr_len;
+
+	struct sockaddr_in remote_addr_in;
+	struct sockaddr_in6 remote_addr_in6;
+	struct sockaddr *remote_addr;
+
+	struct sockaddr_in local_addr_in;
+	struct sockaddr_in6 local_addr_in6;
+	struct sockaddr *local_addr;
+```
+
+See the [sockets homework assignment](../hw-sockets) for example code.
+
+A note about the `local_addr` and `remote_addr` variables.  The functions
+`sendto()`, `recvfrom()`, and `bind()` take type `struct sockaddr *`
+as an argument, rather than `struct sockaddr_in *` or `struct sockaddr_in6 *`.
+Per the `bind()` man page: "The only purpose of this structure is to cast the
+structure pointer passed in addr in order to avoid compiler warnings." In
+essence, this structure makes it so that `bind()` (and the other functions) can
+have a single definition that supports both IPv4 and IPv6.  As long as the
+`struct sockaddr *` points to valid `struct sockaddr_in` or
+`struct sockaddr_in6` instance, then the function will work properly.  You can
+think of this as C's version of polymorphism.  All that being said, if your
+client maintains a `struct sockaddr *` (e.g., `local_addr`) that points to
+whichever of `local_addr_in` or `local_addr_in6` is correct for the current
+address family being used, you can simply use `local_addr` in the calls to
+`bind()` and friends.
 
 When everything is set up, send your message using `sendto()`.  Then read the
 server's response with `recvfrom()` call.  Remember, it is just one call to
@@ -237,7 +281,7 @@ use.
 
 Take a look at the response from the server, as printed by `print_bytes()`.
 Responses from the server are of variable length (but any given message will
-consistent of fewer than 256 bytes) and will follow this format:
+consist of fewer than 256 bytes) and will follow this format:
 
 <table border="1">
 <tr>
@@ -276,7 +320,7 @@ The following is an explanation of each field:
    correspond to a particular change that should be made with regard to how you
    contact the server.  See [Op Codes](#op-codes) for a summary, and the
    instructions for levels [1](#level-1), [2](#level-2), [3](#level-3), and
-   [4](#level-4) for a detailed description of each.
+   [4](#level-4-extra-credit) for a detailed description of each.
 
  - Bytes `n + 2` - `n + 3`: These bytes, an `unsigned short` in network byte
    order is the parameter used in conjunction with the op-code.  For op-code 0,
@@ -353,6 +397,10 @@ have.  You will want to create a loop with the appropriate termination test
 indicating that the entire treasure has been received
 (i.e., [byte 0 has a value of 0](#directions-response)).
 
+The overall interaction is illustrated in the following image:
+
+<img src="treasure_hunt.png" width="800">
+
 Once your client has collected all of the treasure chunks, it should print the
 entire treasure to standard output, followed by a newline (`\n`).  For example,
 if the treasure hunt yielded the following chunks:
@@ -368,8 +416,8 @@ abcdefghij
 ```
 
 No treasure will be longer than 1,024 characters, so you may use that as your
-buffer size.  Remember to add a null byte to the characters comprising your, so
-they can be used with `printf()`!
+buffer size.  Remember to add a null byte after the characters comprising your
+output, so they can be used with `printf()`!
 
 At this point, make sure that the treasure is the only program output.  Remove
 print statements that you have added to your code for debugging by commenting
@@ -392,52 +440,23 @@ communications.  The difference now is that the directions response will
 contain real actions.
 
 For level 1, responses from the server will use op-code 1.  The client should
-be expected to do everything it did at level 0, but also to extract the value
-that should be used as the new remote port from each
-[directions response](#directions-response) and use that new port for future
-communications with the server when op-code 1 is provided.  The remote port is
-specified by bytes `n + 2` and `n + 3` in the
-[directions response](#directions-response), which is an `unsigned short` in
-network byte order (see [Message Formatting](#message-formatting)).
+be expected to do everything it did at level 0, but when op-code 1 is provided
+in the [directions response](#directions-response), it should extract the
+op-param (bytes `n + 2` and `n + 3`) from the response and use that value as
+the remote port for future communications with the server.  That value is an
+`unsigned short` stored in network byte order (see
+[Directions Response](#directions-response) and
+[Message Formatting](#message-formatting)).
 
 Some guidance follows as to how to use the new remote port in future
 communications.
 
-Because local and remote addresses and ports are stored in a
-`struct sockaddr_in` (or `struct sockaddr_in6` for IPv6), one way that you
-might keep always track of your address family (`AF_INET` or `AF_INET6`, for
-IPv4 and IPv6, respectively), as well as remote ports, is by declaring the
-following:
-
-```c
-	int af;
-	struct sockaddr_in ipv4addr_remote;
-	struct sockaddr_in6 ipv6addr_remote;
-```
-
-and maintaining them along the way.  Then you can pass this as an argument to
-`sendto()` with each message sent.  For example:
-
-```c
-	socklen_t remote_addr_len = sizeof(struct sockaddr_storage);
-	if (sendto(sfd, buf, n, 0, (struct sockaddr *) &ipv4addr_remote,
-			remote_addr_len) < 0) {
-		perror("sendto()");
-	}
-```
-
-Note that `sendto()` takes type `struct sockaddr *` as the second-to-last
-argument, allowing it to accept either `struct sockaddr_in` or
-`struct sockaddr_in6`, with the caveat that the argument is *cast* as a
-`struct sockaddr *`.  Per the man page for `bind()`, "The only purpose of this
-structure (`struct sockaddr`) is to cast the structure pointer passed in `addr`
-in order to avoid compiler warnings."  The length of a `struct
-sockaddr_storage` is passed as the last argument, so `sendto()` knows the size
-of the address structure it is working with.
-
-For reference, the data structures used for holding local or remote address and
-port information are defined as follows (see the man pages for `ip(7)` and
-`ipv6(7)`, respectively).
+It was recommended [previously](#sending-and-receiving) that you maintain local
+and remote addresses and ports using structures of type `struct sockaddr_in`
+(or `struct sockaddr_in6` for IPv6).  We now take a closer look at these
+structures to see how things are stored.  The data structures used for holding
+local or remote address and port information are defined as follows (see the
+man pages for `ip(7)` and `ipv6(7)`, respectively).
 
 For IPv4 (`AF_INET`):
 ```c
@@ -468,24 +487,10 @@ For IPv6 (`AF_INET6`):
            };
 ```
 
-Thus, the structures, might be initialized using `getaddrinfo()` with something
-like this:
+Thus, the port of the structure can be updated simply by doing the following:
 
 ```c
-	// populate ipv4addr_remote or ipv6addr_remote with address information
-	// found in the struct addrinfo from getaddrinfo()
-	af = rp->ai_family;
-	if (af == AF_INET) {
-		ipv4addr_remote = *(struct sockaddr_in *)rp->ai_addr;
-	} else {
-		ipv6addr_remote = *(struct sockaddr_in6 *)rp->ai_addr;
-	}
-```
-
-Then the port might be updated using something like this:
-
-```c
-	ipv4addr_remote.sin_port = htons(port); // specific port
+	remote_addr_in.sin_port = htons(port);
 ```
 
 Note that the `sin_port` of the `struct sockaddr_in` member contains the port
@@ -495,7 +500,7 @@ hence the use of `htons()`.
 The same for IPv6:
 
 ```c
-	ipv6addr.sin6_port = htons(port); // specific port
+	remote_addr_in6.sin6_port = htons(port);
 ```
 
 Just as with level 0, have your code
@@ -513,29 +518,15 @@ Now would be a good time to save your work, if you haven't already.
 
 ## Level 2
 
-For level 2, responses from the server will select from op-codes 1 and 2 at random.
-The client should be expected to do everything it did at levels 1 and 2, but
-also to extract the value that should be used as the new local port from each
-[directions response](#directions-response) and use that new local port for future
-communications with the server when op-code 2 is provided.  The local port is
-specified by bytes `n + 2` and `n + 3` in the
-[directions response](#directions-response), which is an `unsigned short` in
-network byte order (see [Message Formatting](#message-formatting)).
-
-Some guidance follows as to how to use the new local port in future
-communications.
-
-Just as it was recommended that you store the remote address and port for
-[level 1](#level-1), it is recommended that you keep track of local address and
-ports in local variables:
-
-```c
-	int af;
-	struct sockaddr_in ipv4addr_local;
-	struct sockaddr_in6 ipv6addr_local;
-```
-
-and maintain them along the way.
+For level 2, responses from the server will use either op-code 1 or op-code 2,
+selected at random.  The client should be expected to do everything it did at
+levels 0 and 1, but when op-code 2 is provided in the
+[directions response](#directions-response), it should extract the op-param
+(bytes `n + 2` and `n + 3`) from the response and use that value as the local
+port for future communications with the server.  That value is an
+`unsigned short` stored in network byte order (see
+[Directions Response](#directions-response) and
+[Message Formatting](#message-formatting)).
 
 Association of a local address and port to a socket is done with the `bind()`
 function.  The following tips associated with `bind()` are not specific to UDP
@@ -551,65 +542,41 @@ sockets (type `SOCK_DGRAM`) but are nonetheless useful for this lab:
    on that socket.
 
 Therefore, every time the client is told to use a new local port (i.e., with
-op-code 2 in a directions response), then the *current socket must be closed*,
-and a new one must be created.  Then `bind()` is called on the new socket.
+op-code 2 in a directions response), _the current socket must be closed_, and a
+new one must be created.  Then `bind()` is called on the new socket.
 
-Because the kernel implicitly assigns an unused local address and port to a
-given socket when none has been explicitly assigned using `bind()`, at times
-you will find it useful to learn the port that has been assigned. To populate
-the address structures that you've declared with the local address and port
-information already associated with a given socket, use `getsockname()`.  For
-example:
+It was recommended [previously](#sending-and-receiving) that you maintain local
+and remote addresses and ports using structures of type `struct sockaddr_in`
+(or `struct sockaddr_in6` for IPv6).  Because you have done this, you can now
+run something like this to bind the newly-created socket to a specific port:
 
 ```c
-	// populate ipv4addr_local or ipv6addr_local with address information
-	// associated with sfd using getsockname()
-	socklen_t addrlen;
-	if (af == AF_INET) {
-		addrlen = sizeof(struct sockaddr_in);
-		getsockname(sfd, (struct sockaddr *)&ipv4addr_local, &addrlen);
-	} else {
-		addrlen = sizeof(struct sockaddr_in6);
-		getsockname(sfd, (struct sockaddr *)&ipv6addr_local, &addrlen);
-	}
-```
+	local_addr_in.sin_family = AF_INET; // use AF_INET (IPv4)
+	local_addr_in.sin_port = htons(port); // specific port
+	local_addr_in.sin_addr.s_addr = 0; // any/all local addresses
 
-So you can later run something like this to bind the newly-created socket to a
-specific port.
+	local_addr_in6.sin6_family = AF_INET6; // IPv6 (AF_INET6)
+	local_addr_in6.sin6_port = htons(port); // specific port
+	bzero(local_addr_in6.sin6_addr.s6_addr, 16); // any/all local addresses
 
-```c
-	if (af == AF_INET) {
-		ipv4addr_local.sin_family = AF_INET; // use AF_INET (IPv4)
-		ipv4addr_local.sin_port = htons(port); // specific port
-		ipv4addr_local.sin_addr.s_addr = 0; // any/all local addresses
-		if (bind(sfd, (struct sockaddr *)&ipv4addr_local,
-				sizeof(struct sockaddr_in)) < 0) {
-			perror("bind()");
-		}
-	} else {
-		ipv6addr_local.sin6_family = AF_INET6; // IPv6 (AF_INET6)
-		ipv6addr_local.sin6_port = htons(port); // specific port
-		bzero(ipv6addr_local.sin6_addr.s6_addr, 16); // any/all local addresses
-		if (bind(sfd, (struct sockaddr *)&ipv6addr_local,
-				sizeof(struct sockaddr_in6)) < 0) {
-			perror("bind()");
-		}
+	if (bind(sfd, local_addr, addr_len) < 0) {
+		perror("bind()");
 	}
 
 ```
 
-Note that `bind()` (like `sendto()`) takes type `struct sockaddr *` as the
-second argument, allowing it to accept either `struct sockaddr_in` or
-`struct sockaddr_in6`, with the caveat that the argument is *cast* as a
-`struct sockaddr *`.  The length of the address structure (either `struct
-sockaddr_in`  or `struct sockaddr_in6`) is passed as the last argument, so
-`bind()` knows the size of the address structure it is working with.
+Note that this code prepares both `local_addr_in` and `local_addr_in6` with the
+appropriate values for receiving on a given port.  However, it's not that we're
+using both.  If `local_addr` is pointing to the one that matters at the moment,
+as has been suggested [previously](#sending-and-receiving), then only the one
+pointed to will matter.  However, there is no harm preparing both to avoid
+conditionals based on address family.
 
 
 ### Checkpoint 2
 
 At this point, you can also test your work with
-[automated testing](#automated-testing).  Levels 0 through 2 should both work
+[automated testing](#automated-testing).  Levels 0 through 2 should all work
 at this point.
 
 Now would be a good time to save your work, if you haven't already.
@@ -617,92 +584,88 @@ Now would be a good time to save your work, if you haven't already.
 
 ## Level 3
 
-For level 2, responses from the server will select from op-codes 1 through 3 at
-random.  The client should be expected to do everything it did at level 0
-through 2, but should now also handle op-code 3.
+For level 3, responses from the server will use any of op-code 1, 2, or 3,
+selected at random.  The client should be expected to do everything it did at
+levels 0 through 2, but also support op-code 3.  When op-code 3 is provided in
+the [directions response](#directions-response), the client should do the
+following to prepare the next directions request:
 
-With op-code 3, the client should read `m` datagrams from the socket (i.e.,
-using the currently established local and remote ports), where `m` is specified
-by the bytes `n + 2` and `n + 3`, which is an `unsigned short` in network byte
-order.  While `m` takes up two bytes for consistency with the other op-codes,
-its value will be only between 1 and 7.  Each of these datagrams will come from
-a randomly-selected remote port on the server, so `recvfrom()` must be used by
-the client to read them to determine which port they came from.
+ - Extract the op-param (bytes `n + 2` and `n + 3`) as an `unsigned short` in
+   network byte order.  The extracted value will be referred to hereafter as
+   `m`.   While `m` takes up two bytes, for consistency with op-params used
+   with other op-codes, its value will be only between 1 and 7.
+ - Read `m` datagrams from the socket using the _local_ port to which the
+   socket is already bound.  Each of these datagrams will come from a
+   randomly-selected _remote_ port on the server, so `recvfrom()` must be used
+   by the client to read them to determine which port they came from.  You
+   should declare a new `struct sockaddr_in` (or `struct sockaddr_in6` for
+   IPv6) variable for use with `recvfrom()`, so the remote port with which your
+   client had been sending directions requests is not lost; the next directions
+   request will be sent to that port, once it is prepared.
 
-Each of the `m` datagrams received will have 0 length.  However, the contents
-of the datagrams are not what is important; what is important is the remote
-ports from which they originated.  The remote ports of the `m` datagrams should
-be added together, and their sum is the nonce, whose value, plus 1, should be
-returned with the next communication to the server.  Note that the sum of these
-values might well sum to something that exceeds the 16 bits associated with an
-`unsigned short` (16 bits), so you will want to store the sum with an `unsigned
-int` (32 bits).
+   Each of the `m` datagrams received will have 0 length.  However, the contents
+   of the datagrams are not what is important; what is important is the remote
+   _ports_ from which they originated (i.e., the _remote_ ports populated with
+   `recvfrom()`).
+ - Sum the values of the remote ports of the `m` datagrams to derive the nonce.
+   Remember the following:
+
+   - Each of the ports must be in host order before its value is added.
+   - The sum of the ports might exceed the value of the 16 bits associated with
+     an `unsigned short` (16 bits), so you will want to keep track of their
+     _sum_ with an `unsigned int` (32 bits).
+ - Add 1 to the nonce, and prepare the new directions request with that value.
+ - Send the directions request with the same local and remort ports with which
+   the most recent directions response was received.
 
 
 ### Checkpoint 3
 
 At this point, you can also test your work with
-[automated testing](#automated-testing).  Levels 0 through 3 should both work
+[automated testing](#automated-testing).  Levels 0 through 3 should all work
 at this point.
 
 Now would be a good time to save your work, if you haven't already.
 
 
-## Level 4
+## Level 4 (Extra Credit)
 
-For level 4, responses from the server will select from op-codes 1 through 4 at
-random.  The client should be expected to do everything it did at level 0
-through 3, but should now also handle op-code 4.
+For level 4, responses from the server will use any of op-code 1, 2, 3, or 4,
+selected at random.  The client should be expected to do everything it did at
+levels 0 through 3, but also support op-code 4.  When op-code 4 is provided in
+the [directions response](#directions-response), the client should do the
+following the prepare the next directions request:
 
-With op-code 4, the client should switch address families from using IPv4
-(`AF_INET`) to IPv6 (`AF_INET6`) or vice-versa, and use the port specified by
-the next two bytes (`n + 2` and `n + 3`), which is an `unsigned short` in
-network byte order, as the new remote port (i.e., like op-code 1).  Future
-communications to and from the server will now use the new address family
-and the new remote port.
+ - Extract the op-param (bytes `n + 2` and `n + 3`) from the response and use
+   that value as the remote port for future communications with the server.
+   This part is the same as with [op-code 1](#level-1).
+ - Prepare a new client socket using whichever address family was _not_ being
+   used before.  If IPv4 (`AF_INET`) was in being used, then switch to IPv6
+   (`AF_INET6`) and vice-versa.  Follow the instructions from
+   [Sending and Receiving](#sending-and-receiving) to prepare your socket,
+   using the new address family and new remote port with `getaddrinfo()` (the
+   hostname will not change!).
+ - Remember to save your remote and local address and port information as shown
+   [previously](#sending-and-receiving).
+ - Update any variables that are specific to address family.  Depending on your
+   implementation, these might include: `addr_fam`, `addr_len`, `remote_addr`,
+   and `local_addr`.
+ - Close the old socket.  It is no longer needed!
 
-The following are useful tips related to address families:
-
- - A socket can be associated with only one address family.  For this lab, it
-   will be either `AF_INET` (IPv4) or `AF_INET6` (IPv6).  See the man page for
-   `socket()`.
- - When using `getaddrinfo()` to create your socket a socket for IPv4 or IPv6
-   use, use the `ai_family` member of the `struct addrinfo` variable passed as
-   the `hints` argument to `getaddrinfo()`.  For IPv4:
-   ```c
-   	hints.ai_family = AF_INET;
-   ```
-   For IPv6:
-   ```c
-   	hints.ai_family = AF_INET6;
-   ```
-   Remember that the port passed as the second argument (`service`) to
-   `getaddrinfo()` is type `char *`.  Thus, if you only have the port as an
-   integer, then you should convert it (not cast it!!).
-
-   See the man page for `getaddrinfo()` for more.
- - The initial communication from the client *must* be over IPv4.
-
-Therefore, every time the client is told to use a new address family (i.e.,
-with op-code 4 in a directions response), then the *current socket must be
-closed*, and a new one must be created with the new address family.  At this
-point, you can also update the value of the variable (e.g., `af`) you might be
-using to keep track of the current address family in use.
 
 Note that handling a socket that might be one of two different address families
-requires a bit of logical complexity.  That is why previous code snippets
-include conditionals such as `if (af == AF_INET)`.  While levels prior to level
-4 could use `AF_INET` (IPv4) exclusively, care that you are now handling each
-call to `sendto()`, `getaddrinfo()`, `getsockname()`, etc., appropriately for
-whatever the current address family is.  That includes the name of the
-variables used (e.g., `ipv4addr_remote` vs `ipv6addr_remote`), the address
-family applied (e.g., `AF_INET` vs. `AF_INET6`), and more.
+requires a bit of logical complexity.
+[However, it has been suggested](#sending-and-receiving) that you maintain two
+variables for the current local address (`local_addr_in` and `local_addr_in6`)
+and remote address (`remote_addr_in` and `remote_addr_in6`).  If you are using
+instances of `struct sockaddr *` to always point to the address structure
+associated with the appropriate address family, then this should "just work".
 
 
 ### Checkpoint 4
 
 At this point, you can also test your work with
-[automated testing](#automated-testing).  Levels 0 through 3 should both work
+[automated testing](#automated-testing).  Levels 0 through 4 should all work
 at this point.
 
 Now would be a good time to save your work, if you haven't already.
@@ -774,7 +737,7 @@ an arbitrary memory location (in this case an array of `unsigned char`) in
 network byte order.  You will need to use this principle to figure out how to
 do similar conversions for other cirumstances, including working with integers
 other than `unsigned short` and extracting integers of various lengths from
-arrays of `unsigned char`.  Hint: the man page for `ntohs()` for related
+arrays of `unsigned char`.  Hint: see the man page for `ntohs()` for related
 functions.
 
 
@@ -813,7 +776,7 @@ The op-codes sent by the server will be one of the following:
    server, derive the nonce by adding the remote ports associated with the `m`
    communications sent by the server.
  - 4: Communicate with the server using a new address family, IPv4 or
-   IPv6--whichever is *not currently* being used.
+   IPv6--whichever is not _currently_ being used.
 
 
 ## UDP Socket Behaviors
@@ -825,7 +788,7 @@ manipulation:
  - Sending every message requires exactly one call to `write()`, `send()`, or
    `sendto()`.  See the man page for `udp`.
  - Receiving every message requires exactly one call to `read()`, `recv()`, or
-   `recvfrom()`.  In some cases (e.g., op-code 3) `recvfrom()` *must* be used.
+   `recvfrom()`.  In some cases (e.g., op-code 3) `recvfrom()` _must_ be used.
    See the man page for `udp`.
  - When 0 is returned by a call to `read()` or `recv()` on a socket of type
    `SOCK_DGRAM`, it simply means that there was no data/payload in the datagram
@@ -897,13 +860,14 @@ _all_ levels.
 Your score will be computed out of a maximum of 100 points based on the
 following distribution:
 
- - 20 points for each of 5 levels (0 through 4)
- - For each level, 4 points for each seed:
+ - 25 points for each of 4 levels (0 through 3)
+ - For each level, 5 points for each seed:
    - 7719
    - 33833
    - 20468
    - 19789
    - 59455
+ - 5 points extra credit for level 4
 
 
 # Submission

@@ -24,6 +24,9 @@ runs the programs specified in those commands.
     - [Checkpoint 3](#checkpoint-3)
     - [A Pipeline with More Than Two Commands](#a-pipeline-with-more-than-two-commands)
     - [Checkpoint 4](#checkpoint-4)
+- [Helper Functions](#helper-functions)
+  - [`parseline()`](#parseline)
+  - [`parseargs()`](#parseargs)
 - [Debugging Hints](#debugging-hints)
 - [Automated Testing](#automated-testing)
 - [Evaluation](#evaluation)
@@ -232,9 +235,6 @@ functionality.  That is where you come in!
 
 ## `tsh.c` Overview
 
-
-### Read/Eval Loop
-
 The read/eval loop is in the `main()` function of `tsh.c`:
 
 ```c
@@ -275,107 +275,6 @@ to be parsed and then evaluated.  Fortunately, there are some helper functions
 to help you with the parsing.
 
 
-### Helper Functions
-
-The `parseline()` and `parseargs()` functions have been written to help you
-parse the command line.
-
-
-#### `parseline()`
-
-`parseline()` finds all the words (i.e., non-whitespace characters separated by
-whitespace) on the command line and puts them into an array of strings which
-is passed in as an argument: `char **argv` (i.e., an array of `char *`).
-
-For example, suppose the following command line is provided to your shell:
-
-```bash
-$ /bin/cat < test.txt | /bin/grep foo > test2.txt
-```
-
-After calling `parseline()`, `argv` contains the following:
-
-```c
-argv[0] = "/bin/cat";
-argv[1] = "<";
-argv[2] = "test.txt";
-argv[3] = "|";
-argv[4] = "/bin/grep";
-argv[5] = "foo";
-argv[6] = ">";
-argv[7] = "test2.txt";
-argv[8] = NULL;
-```
-
-(A `NULL` value at index 8 indicates that that there are no more words, so your
-code can detect that programmatically.)
-
-
-#### `parseargs()`
-
-`parseargs()` further divides the words into commands (and their respective
-arguments) in a pipeline, and returns the number of commands in the pipeline.
-It also identifies the filename(s) (if any) designated by the `>` or `<`
-symbols for output or input redirection, respectively.  Continuing from the
-previous example, suppose that the `argv` list populated by `parseline()` is
-now passed to `parseargs()`, along with three arrays of `int`: `int *cmd`, `int
-*stdin_redir`, and `int *stdout_redir`).  After `parseargs()` returns, the
-arguments passed have the following values:
-
- - `cmds` has been populated with as many commands have been identified in the
-   pipeline (two in this case), such that `cmds[0]` contains the index of the
-   first command in args, `cmds[1]` contains the index of the second command in
-   `argv`, etc.
-
-   ```c
-   cmds[0] = 0; // 0 is the index of "/bin/cat" in argv
-   cmds[1] = 4; // 4 the index of "/bin/grep" in argv
-   ```
-
- - `argv` mostly looks the same as it did before, except that pointers to the
-   strings associated with the redirection and pipe operators (i.e., `>`, `<`,
-   and `|`) have been removed, each replaced with a null pointer.  Thus, each
-   command, including its arguments, is followed by `NULL`.
-
-   ```c
-   argv[0] = "/bin/cat";
-   argv[1] = NULL; // <-- this is the end of the argment list for command 0
-   argv[2] = "test.txt";
-   argv[3] = NULL;
-   argv[4] = "/bin/grep";
-   argv[5] = "foo";
-   argv[6] = NULL; // <-- this is the end of the argument list for command 1
-   argv[7] = "test2.txt";
-   argv[8] = NULL;
-   ```
-
-   Because `execve()` takes as its second argument "an array of pointers to
-   null-terminated strings that represent the argument list" (ref: `man exec`),
-   the `NULL` after each command and its arguments creates a natural delimiter
-   for that command.  For example, `argv[cmds[0]]` and `&argv[cmds[0]]` can be
-   passed as the `pathname` and `argv` arguments to `execve()`, respectively,
-   for the first command, and `argv[cmds[1]]` and `&argv[cmds[1]]` as the
-   `pathname` and `argv` arguments for the second, etc.
-
- - `stdin_redir` and `stdout_redir` have (like `cmds`) been populated with as
-   many commands as have been identified in the pipeline (two in this case). In
-   each case, a value greater than 0 contains the index of `argv` that contains
-   the filename for which input (`stdin_redir`) or output (`stdout_redir`)
-   should be redirected for the corresponding command in args. A value less
-   than 0 indicates that that command has no input or output redirection.
-
-   ```c
-   stdin_redir[0] = 2; // stdin for command 0 ("/bin/cat") has been redirected to argv[2] ("test.txt")
-   stdin_redir[1] = -1; // stdin for command 1 ("/bin/grep") has not been redirected.
-   stdout_redir[0] = -1; // stdout for command 0 ("/bin/cat") has not been redirected.
-   stdout_redir[1] = 7; // stdout for command 1 ("/bin/grep") has been redirected to argv[7] ("test2.txt")
-   ```
-
-   Note, however, that only the first command in a pipeline will ever have its
-   standard input redirected, and only the last command in a pipeline will ever
-   have its standard output redirected.
-
-
 # Instructions
 
 _This is where you start coding!_
@@ -402,12 +301,14 @@ in was _not_ a built-in command.
  - `char *cmdline` - a string containing the contents of a command line read in
    from standard input in the read/eval loop.
 
-Parse the command line using `parseline()` and `parseargs()`, and pass the
-first command (and its arguments) in the pipeline to `builtin_cmd()`.
+Use the `parseline()` and `parseargs()` helper functions, 
+[which have been implemented for you](#helper-functions), and pass the first
+command (and its arguments) in the pipeline to `builtin_cmd()`.
 
 If `builtin_cmd()` indicates that it is not a built-in command (return value
 of 0), then begin execution of the commands in the pipeline, following the
 instructions in the next sections.
+
 
 ### Checkpoint 1
 
@@ -644,6 +545,107 @@ than two commands.
 
 You can also test your work with [automated testing](#automated-testing).
 Tests 1 - 3 and 34 - 42 should work at this point.
+
+
+# Helper Functions
+
+The `parseline()` and `parseargs()` functions have been written to help you
+parse the command line.
+
+
+## `parseline()`
+
+`parseline()` finds all the words (i.e., non-whitespace characters separated by
+whitespace) on the command line and puts them into an array of strings which
+is passed in as an argument: `char **argv` (i.e., an array of `char *`).
+
+For example, suppose the following command line is provided to your shell:
+
+```bash
+$ /bin/cat < test.txt | /bin/grep foo > test2.txt
+```
+
+After calling `parseline()`, `argv` contains the following:
+
+```c
+argv[0] = "/bin/cat";
+argv[1] = "<";
+argv[2] = "test.txt";
+argv[3] = "|";
+argv[4] = "/bin/grep";
+argv[5] = "foo";
+argv[6] = ">";
+argv[7] = "test2.txt";
+argv[8] = NULL;
+```
+
+(A `NULL` value at index 8 indicates that that there are no more words, so your
+code can detect that programmatically.)
+
+
+## `parseargs()`
+
+`parseargs()` further divides the words into commands (and their respective
+arguments) in a pipeline, and returns the number of commands in the pipeline.
+It also identifies the filename(s) (if any) designated by the `>` or `<`
+symbols for output or input redirection, respectively.  Continuing from the
+previous example, suppose that the `argv` list populated by `parseline()` is
+now passed to `parseargs()`, along with three arrays of `int`: `int *cmd`, `int
+*stdin_redir`, and `int *stdout_redir`).  After `parseargs()` returns, the
+arguments passed have the following values:
+
+ - `cmds` has been populated with as many commands have been identified in the
+   pipeline (two in this case), such that `cmds[0]` contains the index of the
+   first command in args, `cmds[1]` contains the index of the second command in
+   `argv`, etc.
+
+   ```c
+   cmds[0] = 0; // 0 is the index of "/bin/cat" in argv
+   cmds[1] = 4; // 4 the index of "/bin/grep" in argv
+   ```
+
+ - `argv` mostly looks the same as it did before, except that pointers to the
+   strings associated with the redirection and pipe operators (i.e., `>`, `<`,
+   and `|`) have been removed, each replaced with a null pointer.  Thus, each
+   command, including its arguments, is followed by `NULL`.
+
+   ```c
+   argv[0] = "/bin/cat";
+   argv[1] = NULL; // <-- this is the end of the argment list for command 0
+   argv[2] = "test.txt";
+   argv[3] = NULL;
+   argv[4] = "/bin/grep";
+   argv[5] = "foo";
+   argv[6] = NULL; // <-- this is the end of the argument list for command 1
+   argv[7] = "test2.txt";
+   argv[8] = NULL;
+   ```
+
+   Because `execve()` takes as its second argument "an array of pointers to
+   null-terminated strings that represent the argument list" (ref: `man exec`),
+   the `NULL` after each command and its arguments creates a natural delimiter
+   for that command.  For example, `argv[cmds[0]]` and `&argv[cmds[0]]` can be
+   passed as the `pathname` and `argv` arguments to `execve()`, respectively,
+   for the first command, and `argv[cmds[1]]` and `&argv[cmds[1]]` as the
+   `pathname` and `argv` arguments for the second, etc.
+
+ - `stdin_redir` and `stdout_redir` have (like `cmds`) been populated with as
+   many commands as have been identified in the pipeline (two in this case). In
+   each case, a value greater than 0 contains the index of `argv` that contains
+   the filename for which input (`stdin_redir`) or output (`stdout_redir`)
+   should be redirected for the corresponding command in args. A value less
+   than 0 indicates that that command has no input or output redirection.
+
+   ```c
+   stdin_redir[0] = 2; // stdin for command 0 ("/bin/cat") has been redirected to argv[2] ("test.txt")
+   stdin_redir[1] = -1; // stdin for command 1 ("/bin/grep") has not been redirected.
+   stdout_redir[0] = -1; // stdout for command 0 ("/bin/cat") has not been redirected.
+   stdout_redir[1] = 7; // stdout for command 1 ("/bin/grep") has been redirected to argv[7] ("test2.txt")
+   ```
+
+   Note, however, that only the first command in a pipeline will ever have its
+   standard input redirected, and only the last command in a pipeline will ever
+   have its standard output redirected.
 
 
 # Debugging Hints
