@@ -131,7 +131,7 @@ int main(int argc, char *argv[]) {
 			remote_addr = (struct sockaddr *)&remote_addr_in6;
 			local_addr = (struct sockaddr *)&local_addr_in6;
 		}
-		printf("Connecting to %s:%d (family: %d, len: %d)\n",
+		fprintf(stderr, "Connecting to %s:%d (family: %d, len: %d)\n",
 				remote_addr_str, remote_port, addr_fam,
 				addr_len);
 
@@ -173,7 +173,7 @@ int main(int argc, char *argv[]) {
 				local_addr_str, addr_len);
 		local_port = ntohs(local_addr_in6.sin6_port);
 	}
-	printf("Local socket info: %s:%d (family: %d, len: %d)\n",
+	fprintf(stderr, "Local socket info: %s:%d (family: %d, len: %d)\n",
 			local_addr_str, local_port, addr_fam,
 			addr_len);
 
