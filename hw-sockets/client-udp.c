@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = af;    /* Allow IPv4, IPv6, or both, depending on
 				    what was specified on the command line. */
-	hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+	hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
 	hints.ai_flags = 0;
 	hints.ai_protocol = 0;  /* Any protocol */
 
@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
 
 		/* if connect is successful, then break out of the loop; we
 		 * will use the current address */
-		if (connect(sfd, remote_addr, addr_len) != -1)
+		//if (connect(sfd, remote_addr, addr_len) != -1)
 			break;  /* Success */
 
 		close(sfd);
@@ -182,56 +182,9 @@ int main(int argc, char *argv[]) {
 	/* Send remaining command-line arguments as separate
 	   datagrams, and read responses from server */
 
-	// Buffer stuff from stdin
-	char buffer[4096];
-	int total_read = 0;
-	int bytes_read = 0;
-	do {
-		bytes_read = fread(buffer + total_read, 1, 512, stdin);
-		total_read += bytes_read;
-	} while(bytes_read == 512 && total_read <= 4096);
-
-	// Send buffered stuff from stdin to server
-	int total_sent = 0;
-	int bytes_sent = 0;
-	do {
-		if (total_read - total_sent < 512) {
-			bytes_sent = write(sfd, buffer + total_sent, total_read - total_sent);
-		}
-		else {
-			bytes_sent = write(sfd, buffer + total_sent, 512);
-		}
-		if (bytes_sent < 0) {
-			break;
-		}
-		total_sent += bytes_sent;
-	} while(bytes_sent == 512 && total_sent <= total_read);
-
-	// Read response from remote host
-	char rbuffer[16384];
-	int rtotal_read = 0;
-	int rbytes_read = 0;
-	do {
-		rbytes_read = recv(sfd, rbuffer + rtotal_read, 512, 0);
-		rtotal_read += rbytes_read;
-		if (rbytes_read <= 0){
-			break;
-		}
-		//printf("rBytes Read: %d\n",rbytes_read);
-		//printf("rTotal Read: %d\n",rtotal_read);
-	} while(rbytes_read > 0 && rtotal_read <= 16384);
-
-	// Write response to stdout
-	int error = write(STDOUT_FILENO, rbuffer, rtotal_read);
-	if (error < 0) {
-		perror("Write http response");
-		exit(-1);
-	}
-
-/*
 	for (j = hostindex + 2; j < argc; j++) {
 		len = strlen(argv[j]) + 1;
-		/* +1 for terminating null byte * /
+		/* +1 for terminating null byte */
 
 		if (len + 1 > BUF_SIZE) {
 			fprintf(stderr,
@@ -239,11 +192,11 @@ int main(int argc, char *argv[]) {
 			continue;
 		}
 		
-		if (write(sfd, argv[j], len) != len) {
+		//if (write(sfd, argv[j], len) != len) {
+		if (sendto(sfd, argv[j], len, 0, remote_addr, addr_len) != len) {
 			fprintf(stderr, "partial/failed write\n");
 			exit(EXIT_FAILURE);
 		}
-		printf("sent 1\n");
 
 		/*
 		nread = read(sfd, buf, BUF_SIZE);
@@ -253,10 +206,9 @@ int main(int argc, char *argv[]) {
 		}
 
 		printf("Received %zd bytes: %s\n", nread, buf);
-		* /
+		*/
 
 	}
-	*/
 
 	exit(EXIT_SUCCESS);
 }

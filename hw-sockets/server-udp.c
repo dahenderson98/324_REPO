@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-#define BUF_SIZE 500
+#define BUF_SIZE 1
 
 int main(int argc, char *argv[]) {
 	int portindex;
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	port = atoi(argv[portindex]);
-	sock_type = SOCK_STREAM;
+	sock_type = SOCK_DGRAM;
 
 
 	/* SECTION A - populate address structures */
@@ -86,42 +86,31 @@ int main(int argc, char *argv[]) {
 
 	/* Read datagrams and echo them back to sender */
 
-	listen(sfd, 100);
 	for (;;) {
 		remote_addr_len = sizeof(struct sockaddr_storage);
-		int new_sfd = accept(sfd, (struct sockaddr *) &remote_addr, &remote_addr_len);
+		//printf("before recvfrom()\n"); fflush(stdout);
+		nread = recvfrom(sfd, buf, BUF_SIZE, 0,
+				(struct sockaddr *) &remote_addr, &remote_addr_len);
 		sleep(5);
-		for (;;) {
-			//remote_addr_len = sizeof(struct sockaddr_storage);
-			//printf("before recvfrom()\n"); fflush(stdout);
-			//nread = recvfrom(sfd, buf, BUF_SIZE, 0, (struct sockaddr *) &remote_addr, &remote_addr_len);
-			nread = recv(new_sfd, buf, BUF_SIZE, 0);
-			printf("recvd once\n");
-			if (nread == 0) {
-				close(new_sfd);
-				break;
-			}
-			
-			//sleep(5);
-			//printf("after recvfrom()\n"); fflush(stdout);
-			if (nread == -1)
-				continue;   /* Ignore failed request */
+		//printf("after recvfrom()\n"); fflush(stdout);
+		if (nread == -1)
+			continue;   /* Ignore failed request */
 
-			char host[NI_MAXHOST], service[NI_MAXSERV];
+		char host[NI_MAXHOST], service[NI_MAXSERV];
 
-			s = getnameinfo((struct sockaddr *) &remote_addr,
-							remote_addr_len, host, NI_MAXHOST,
-							service, NI_MAXSERV, NI_NUMERICSERV | NI_NUMERICHOST);
-		
-			if (s == 0)
-				printf("Received %zd bytes from %s:%s\n",
-						nread, host, service);
-			else
-				fprintf(stderr, "getnameinfo: %s\n", gai_strerror(s));
+		s = getnameinfo((struct sockaddr *) &remote_addr,
+						remote_addr_len, host, NI_MAXHOST,
+						service, NI_MAXSERV, NI_NUMERICSERV | NI_NUMERICHOST);
+	
+		if (s == 0)
+			printf("Received %zd bytes from %s:%s\n",
+					nread, host, service);
+		else
+			fprintf(stderr, "getnameinfo: %s\n", gai_strerror(s));
 
-			//if (sendto(sfd, buf, nread, 0, (struct sockaddr *) &remote_addr, remote_addr_len) < 0)
-			if (send(new_sfd, buf, nread, 0) < 0)
-				fprintf(stderr, "Error sending response\n");
-		}
+		if (sendto(sfd, buf, nread, 0,
+					(struct sockaddr *) &remote_addr,
+					remote_addr_len) < 0)
+			fprintf(stderr, "Error sending response\n");
 	}
 }
