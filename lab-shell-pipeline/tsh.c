@@ -109,7 +109,7 @@ void eval(char *cmdline)
     char *argv[MAXARGS];
     int argc = parseline(cmdline, argv); // Parse line into argument vector
     if (argc <= 0) {
-        return;
+        //return;
     }
     
     int cmds[MAXARGS]; 
