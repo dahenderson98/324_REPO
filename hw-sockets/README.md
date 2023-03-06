@@ -29,23 +29,37 @@ both communication types.
     assignment.  Reviewing the principles on strings and I/O will greatly help
     you in this assignment!
 
- 4. Start a tmux session.  Create three panes, such that the window looks like
+ 4. Log on to a BYU CS lab workstation directly, or log on remotely via SSH
+    using the following command:
+
+    ```
+    ssh username@schizo.cs.byu.edu
+    ```
+    (Replace "username" with your actual CS username)
+
+    The exercises in this assignment will only work if run from a CS lab
+    machine.
+
+ 5. Start a tmux session.  Create two panes, such that the window looks like
     this:
 
     ```
     ---------------------------
     |  remote   |    local    |
     | (server)  |   (client)  |
-    --------------------------|
-    |         remote          |
-    |       (analysis)        |
+    |           |             |
     ---------------------------
     ```
 
- 5. On the two "remote" panes, ssh to a different CS lab machine machine (see a
-    list of machine names
-    [here](https://docs.cs.byu.edu/doku.php?id=open-lab-layout)).  You must log
-    in to the _same_ lab machine from both "remote" panes.
+ 6. On the left "remote" pane, use SSH to remotely log on to a CS lab machine
+    _different_ from the one you are already on.  (see a list of machine names
+    [here](https://docs.cs.byu.edu/doku.php?id=open-lab-layout)):
+
+    ```
+    ssh username@hostname
+    ```
+    (Replace "username" with your actual CS username and "hostname" with the
+    name of the host to which you wish to log on.)
 
 
 # Part 1: UDP Sockets
@@ -65,7 +79,7 @@ will come later.
 In the next steps, you will be experimenting with UDP sockets on the client and
 server side, using the `client` and `server` programs, respectively.
 
-In the top-left "remote" pane, run the the following command:
+In the left "remote" pane, run the the following command:
 
 ```bash
 $ ./server -4 port
@@ -96,7 +110,7 @@ Then re-run `make` and restart the server using the same command-line arguments
 as before.  While your server is again blocking, at least you can see _where_!
 
 Now, let's run the client to create some interaction between client and server.
-In the top-right "local" pane, run the following:
+In the right "local" pane, run the following:
 
 ```bash
 $ ./client -4 hostname port foo bar abc123
@@ -140,13 +154,13 @@ on the socket used by the client.  Modify `client.c` in the following ways:
  - Replace the call to `write()` with a call to `sendto()`.  The new line of
    code will look nearly identical to the one you just commented out, except
    that `sendto()` allows you to specify the recipient (remote IP address and
-   host), which is necessary if `connect()` has not been called on the socket.
+   port), which is necessary if `connect()` has not been called on the socket.
 
 Re-run `make` to rebuild both binaries.  Interrupt and restart the server in
-the top-left "remote" pane.
+the left "remote" pane.
 
 With the server running on the remote host, execute (again) the client command
-you ran previously in the top-right "local" pane, sending the same strings as
+you ran previously in the right "local" pane, sending the same strings as
 before.
 
  6. *How do the local address and port values printed out by the client
@@ -154,19 +168,19 @@ before.
 
 In `client.c` copy the lines of code that retrieve and print the local address
 and port from the socket (i.e., starting with `getsockname()` and ending with
-`printf()`) such that they are executed again _immediately_ after the call to
+`fprintf()`) such that they are executed again _immediately_ after the call to
 `sendto()`.
 
 Re-run `make` to rebuild both binaries.  You might get some warnings about
 variables that _might_ not have been initialized; for the purposes of this
 assignment, you can ignore them.  Interrupt and restart the server in the
-top-left "remote" pane.
+left "remote" pane.
 
 With the server running on the remote host, execute (again) the client command
-you ran previously in the top-right "local" pane, sending the same strings as
+you ran previously in the right "local" pane, sending the same strings as
 before.
 
- 7. Analyze the output associated with the `printf()` statements that follow
+ 7. Analyze the output associated with the `fprintf()` statements that follow
     the calls to `getsockname()`.  *What do the differences in output teach
     you about _when_ the local address and port are set for a given socket?*
 
@@ -202,7 +216,7 @@ to both client and server code to better understand what is going on:
      `recvfrom()` statement.
  - Modify `client.c`:
    - Remove the lines following `sendto()`, beginning with `getsockname()` and
-     ending with `printf()`, which you added previously.
+     ending with `fprintf()`, which you added previously.
    - Comment out the code that calls `read()` and `printf()`, such that it does
      not attempt to read from the socket or print what it read after writing
      to the socket.
@@ -214,14 +228,14 @@ and third packets will _both_ have been received by the server's kernel, ready
 to be read, before `recvfrom()` is called by the server the second time.
 
 Re-run `make` to rebuild both binaries.  Then interrupt and restart the server
-in the top-left "remote" pane.
+in the left "remote" pane.
 
 With the server running on the remote host, execute (again) the client command
-you ran previously in the top-right "local" pane, sending the same strings as
+you ran previously in the right "local" pane, sending the same strings as
 before.
 
- 8. *How many _total_ calls to `send()` / `write()` were made by the client?*
-    Hint: refer to `client.c`.
+ 8. *How many _total_ calls to `send()` / `sendto()` / `write()` were made by
+    the client?* Hint: refer to `client.c`.
  9. *How many messages were received by the kernel of the server-side process
     _before_ the server called `recvfrom()` the second time (i.e., _between_
     the server's first and second calls to `recvfrom()`)?*  You can assume that
@@ -239,10 +253,10 @@ Change the value of the `len` argument passed to `recvfrom()` in `server.c`
 from `BUF_SIZE` to `1`.
 
 Re-run `make` to rebuild both binaries.  Then interrupt and restart the server
-in the top-left "remote" pane.
+in the left "remote" pane.
 
 With the server running on the remote host, execute (again) the client command
-you ran previously in the top-right "local" pane, sending the same strings as
+you ran previously in the right "local" pane, sending the same strings as
 before.
 
  12. *How many total calls to `recvfrom()` were made?*  Hint: look at the
@@ -319,7 +333,7 @@ Make the following modifications:
      `tcp`, and `udp`.
 
 Re-run `make` to rebuild both binaries.  Interrupt and restart the server in
-the top-left "remote" pane.
+the left "remote" pane.
 
 Now run the following command twice:
 
@@ -359,10 +373,10 @@ will have sent all of its messages _and_ those messages will have been received
 by the server's kernel, before `recv()` is ever called by the server.
 
 Re-run `make` to rebuild both binaries.  Interrupt and restart the server in
-the top-left "remote" pane.
+the left "remote" pane.
 
-While the server is running on the remote host in the top-left "remote"
-pane), run the following in the top-right "local" pane:
+While the server is running on the remote host in the left "remote"
+pane), run the following in the right "local" pane:
 
 ```bash
 $ ./client -4 hostname port foo bar abc123
@@ -383,10 +397,10 @@ Change the value of the `len` argument passed to `recv()` in `server.c` from
 `BUF_SIZE` to `1`.
 
 Re-run `make` to rebuild both binaries.  Then interrupt and restart the server
-in the top-left "remote" pane.
+in the left "remote" pane.
 
 With the server running on the remote host, execute (again) the client command
-you ran previously in the top-right "local" pane, sending the same strings as
+you ran previously in the right "local" pane, sending the same strings as
 before.
 
  22. *How many total calls to `recv()` were made?*  Hint: look at the server
@@ -427,7 +441,7 @@ the socket connection is established:
    sent to ensure that all has been sent and write your loop termination test
    accordingly.
 
-In the top-left "remote" pane, start a netcat (`nc` command) server listening
+In the left "remote" pane, start a netcat (`nc` command) server listening
 for incoming TCP connections on a port of your choosing:
 
 ```bash
@@ -436,7 +450,7 @@ $ nc -l port
 
 (Replace `port` with a port of your choosing.)
 
-Now test your client program by running the following in the top-right "local"
+Now test your client program by running the following in the right "local"
 pane:
 
 ```bash
@@ -543,7 +557,7 @@ program such that:
    www-notls.imaal.byu.edu;
  - you are redirecting the contents of `http-socket.txt` to the standard input
    of the client process (using input redirection on the shell);
- - you are redirecting the standard output of your client process to
+ - you are piping the standard output of your client process to
    `./strip_http.py`; and
  - you are redirecting the standard output of `./strip_http.py` to `socket.jpg`.
 
