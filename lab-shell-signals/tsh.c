@@ -133,22 +133,22 @@ int main(int argc, char **argv)
     /* Execute the shell's read/eval loop */
     while (1) {
 
-	/* Read command line */
-	if (emit_prompt) {
-	    printf("%s", prompt);
-	    fflush(stdout);
-	}
-	if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
-	    app_error("fgets error");
-	if (feof(stdin)) { /* End of file (ctrl-d) */
-	    fflush(stdout);
-	    exit(0);
-	}
+        /* Read command line */
+        if (emit_prompt) {
+            printf("%s", prompt);
+            fflush(stdout);
+        }
+        if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
+            app_error("fgets error");
+        if (feof(stdin)) { /* End of file (ctrl-d) */
+            fflush(stdout);
+            exit(0);
+        }
 
-	/* Evaluate the command line */
-	eval(cmdline);
-	fflush(stdout);
-	fflush(stdout);
+        /* Evaluate the command line */
+        eval(cmdline);
+        fflush(stdout);
+        fflush(stdout);
     } 
 
     exit(0); /* control never reaches here */
@@ -167,6 +167,58 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    char *argv[MAXARGS];
+    int is_bg_process = parseline(cmdline, argv); // Parse line into argument vector
+
+    int was_builtin_cmd = builtin_cmd(argv);
+    if (was_builtin_cmd) {
+        return;
+    }
+
+    // Block SIGCHLD, SIGINT, SIGTSTP
+    sigset_t mask_three, prev_three;
+    sigemptyset(&mask_three);
+    sigemptyset(&prev_three);
+    sigaddset(&mask_three, SIGCHLD);
+    sigaddset(&mask_three, SIGINT);
+    sigaddset(&mask_three, SIGTSTP);
+    sigprocmask(SIG_BLOCK, &mask_three, &prev_three);
+
+    int pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        exit(0);
+    }
+
+    // Child process
+    if (pid == 0) {
+        // Unblock SIGCHLD, SIGINT, SIGTSTP
+        sigprocmask(SIG_SETMASK, &prev_three, NULL);
+
+        // Execute command
+        int exec_ret = execve(argv[0],&argv[0],environ); 
+        if (exec_ret < 0) {
+            fprintf(stderr,"%s: Command not found\n", argv[0]);
+            exit(0);
+        }
+    }
+    // Parent process
+    else {
+        // Add child to its own group
+        setpgid(pid, pid);
+        // Add child to job list
+        addjob(jobs, pid, pid, is_bg_process+1, cmdline);
+        // Unblock SIGCHLD, SIGINT, SIGTSTP
+        sigprocmask(SIG_SETMASK, &prev_three, NULL);
+        if (!is_bg_process) {
+            waitfg(pid);
+        }
+        else {
+            printf("[%d] (%d) %s", getjobpid(jobs, pid)->jid, pid, cmdline);
+        }
+    }
+
+
     return;
 }
 
@@ -294,6 +346,17 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    if (!strcmp(argv[0],"quit")) {
+        exit(0);
+    }
+    else if (!strcmp(argv[0],"fg") || !strcmp(argv[0],"bg")) {
+        do_bgfg(argv);
+        return 1;
+    }
+    else if (!strcmp(argv[0],"jobs")) {
+        listjobs(jobs);
+        return 1;
+    }
     return 0;     /* not a builtin command */
 }
 
@@ -302,6 +365,102 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    // Make sure an argument was included with fg or bg
+    if (argv[1] == NULL) {
+        fprintf(stderr, "%s command requires PID or %%jobid argument\n",argv[0]);
+        return;
+    }
+    // Command was fg
+    else if (!strcmp(argv[0],"fg")) {
+        // JID was given
+        if (argv[1][0] == '%') {
+            int jid = atoi(argv[1]+1);
+            // Bad JID given
+            if (jid == 0) {
+                fprintf(stderr, "%s: argument must be a PID or %%jobid\n",argv[0]);
+                return;
+            }
+            struct job_t *job = getjobjid(jobs, jid);
+            if (job == NULL) {
+                // Bad JID given
+                fprintf(stderr, "%s: No such job\n", argv[1]);
+                return;
+            }
+            // Change state of specified job to foreground
+            job->state = FG;
+            // Send SIGCONT signal to new foreground job
+            kill(-job->pgid, SIGCONT);
+            sleep(1);
+            // Wait until foreground job is no longer in the foreground, i.e. finishes
+            waitfg(job->pid);
+        }
+        // PID was given
+        else {
+            int pid = atoi(argv[1]);
+            // Bad PID given
+            if (pid == 0) {
+                fprintf(stderr, "%s: argument must be a PID or %%jobid\n",argv[0]);
+                return;
+            }
+            struct job_t *job = getjobpid(jobs, pid);
+            if (job == NULL) {
+                // Bad PID given
+                fprintf(stderr, "(%s): No such process\n", argv[1]);
+                return;
+            }
+            // Change state of specified process to foreground
+            job->state = FG;
+            // Send SIGCONT signal to new foreground job
+            kill(-job->pgid, SIGCONT);
+            sleep(1);
+            // Wait until foreground job is no longer in the foreground, i.e. finishes
+            waitfg(job->pid);
+        }
+    }
+    // Command was bg
+    else {
+        // JID was given
+        if (argv[1][0] == '%') {
+            int jid = atoi(argv[1]+1);
+            if (jid == 0) {
+                fprintf(stderr, "%s: argument must be a PID or %%jobid\n",argv[0]);
+                return;
+            }
+            struct job_t *job = getjobjid(jobs, jid);
+            if (job == NULL) {
+                // Bad JID given
+                fprintf(stderr, "%s: No such job\n", argv[1]);
+                return;
+            }
+            // Change state of specified job to background
+            job->state = BG;
+            // Send SIGCONT signal to new background job
+            kill(-job->pgid, SIGCONT);
+            sleep(1);
+            printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
+        }
+        // PID was given
+        else {
+            int pid = atoi(argv[1]);
+            // Bad PID given
+            if (pid == 0) {
+                fprintf(stderr, "%s: argument must be a PID or %%jobid\n",argv[0]);
+                return;
+            }
+            struct job_t *job = getjobpid(jobs, pid);
+            if (job == NULL) {
+                // Bad PID given
+                fprintf(stderr, "(%s): No such process\n", argv[1]);
+                return;
+            }
+            // Change state of specified process to background
+            job->state = BG;
+            // Send SIGCONT signal to new background job
+            kill(-job->pgid, SIGCONT);
+            sleep(1);
+            printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
+        }
+    }
     return;
 }
 
@@ -310,6 +469,10 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    while(getjobpid(jobs, pid) != NULL && getjobpid(jobs, pid)->state == FG) {
+        sleep(1);
+    }
+    
     return;
 }
 
@@ -326,6 +489,38 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    if (verbose)
+		printf("sigchld_handler: entering\n");
+
+    // Reap any children that have already stopped
+    int wstatus;
+    int found_child_pid = waitpid(-1, &wstatus, WUNTRACED | WNOHANG);
+    while(found_child_pid > 0) {
+        // Child was stopped
+        if (WIFSTOPPED(wstatus)) {
+            /* Change the state of the corresponding job, and print out a message indicating 
+               that the job has been stopped*/
+            getjobpid(jobs, found_child_pid)->state = ST;
+            int sig_num = WSTOPSIG(wstatus);
+            printf("Job [%d] (%d) stopped by signal %d\n", getjobpid(jobs,found_child_pid)->jid, found_child_pid, sig_num);
+        }
+        // Child was terminated by a signal
+        if (WIFSIGNALED(wstatus)) {
+            /* Delete the job associated with the child process, and print a message indicating 
+               that the job has been terminated by a signal */
+            int sig_num = WTERMSIG(wstatus);
+            printf("Job [%d] (%d) terminated by signal %d\n", getjobpid(jobs,found_child_pid)->jid, found_child_pid, sig_num);
+            deletejob(jobs, found_child_pid);
+        }
+        // Child exited normally
+        else if (WIFEXITED(wstatus)) {
+            /* Delete the job associated with the child process */
+            deletejob(jobs, found_child_pid);
+        }
+
+        // Reap next child process
+        found_child_pid = waitpid(-1, &wstatus, WUNTRACED | WNOHANG);
+    }
     return;
 }
 
@@ -336,7 +531,13 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
-    return;
+    if (verbose)
+		printf("sigint_handler: entering\n");
+
+    // Forward received sigint signal to foreground process group
+    kill(-getjobpid(jobs,fgpid(jobs))->pgid, sig);
+
+	return;
 }
 
 /*
@@ -346,7 +547,13 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
-    return;
+    if (verbose)
+		printf("sigtstp_handler: entering\n");
+        
+    // Forward received sigtstp signal to foreground process group
+    kill(-getjobpid(jobs,fgpid(jobs))->pgid, sig);
+
+	return;
 }
 
 /*********************
@@ -484,24 +691,24 @@ void listjobs(struct job_t *jobs)
     int i;
     
     for (i = 0; i < MAXJOBS; i++) {
-	if (jobs[i].pid != 0) {
-	    printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
-	    switch (jobs[i].state) {
-		case BG: 
-		    printf("Running ");
-		    break;
-		case FG: 
-		    printf("Foreground ");
-		    break;
-		case ST: 
-		    printf("Stopped ");
-		    break;
-	    default:
-		    printf("listjobs: Internal error: job[%d].state=%d ", 
-			   i, jobs[i].state);
-	    }
-	    printf("%s", jobs[i].cmdline);
-	}
+        if (jobs[i].pid != 0) {
+            printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
+            switch (jobs[i].state) {
+            case BG: 
+                printf("Running ");
+                break;
+            case FG: 
+                printf("Foreground ");
+                break;
+            case ST: 
+                printf("Stopped ");
+                break;
+            default:
+                printf("listjobs: Internal error: job[%d].state=%d ", 
+                i, jobs[i].state);
+            }
+            printf("%s", jobs[i].cmdline);
+        }
     }
 }
 /******************************

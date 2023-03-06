@@ -182,7 +182,7 @@ int main(int argc, char *argv[]) {
 	/* Send remaining command-line arguments as separate
 	   datagrams, and read responses from server */
 
-	// Buffer stuff from stdin
+	// 1. Buffer stuff from stdin
 	char buffer[4096];
 	int total_read = 0;
 	int bytes_read = 0;
@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
 		total_read += bytes_read;
 	} while(bytes_read == 512 && total_read <= 4096);
 
-	// Send buffered stuff from stdin to server
+	// 2. Send buffered stuff from stdin to server
 	int total_sent = 0;
 	int bytes_sent = 0;
 	do {
@@ -207,7 +207,7 @@ int main(int argc, char *argv[]) {
 		total_sent += bytes_sent;
 	} while(bytes_sent == 512 && total_sent <= total_read);
 
-	// Read response from remote host
+	// 3. Read response from remote host
 	char rbuffer[16384];
 	int rtotal_read = 0;
 	int rbytes_read = 0;
@@ -217,11 +217,9 @@ int main(int argc, char *argv[]) {
 		if (rbytes_read <= 0){
 			break;
 		}
-		//printf("rBytes Read: %d\n",rbytes_read);
-		//printf("rTotal Read: %d\n",rtotal_read);
 	} while(rbytes_read > 0 && rtotal_read <= 16384);
 
-	// Write response to stdout
+	// 4. Write response to stdout
 	int error = write(STDOUT_FILENO, rbuffer, rtotal_read);
 	if (error < 0) {
 		perror("Write http response");
