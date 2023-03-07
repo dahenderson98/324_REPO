@@ -11,18 +11,15 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-int verbose = 0;
+int debug = 0;
 
 void print_bytes(unsigned char *bytes, int byteslen);
 
 int main(int argc, char *argv[]) {
 
-	// int server = atoi(argv[1]);
-	// int port = atoi(argv[2]);
 	int level = atoi(argv[3]);
 	int seed = atoi(argv[4]);
 	char* serverstr = argv[1];
-	// char* portstr = argv[2];
 
 	// Create first request
 	unsigned char first_req[8];
@@ -34,7 +31,6 @@ int main(int argc, char *argv[]) {
 	memcpy(&first_req[2],&user_id,4);
 	memcpy(&first_req[6],&short_seed,2);
 	
-	//print_bytes(first_req,8);
 
 	// Set up socket
 	int addr_fam = AF_INET;
@@ -69,14 +65,11 @@ int main(int argc, char *argv[]) {
 	hints.ai_flags = 0;
 	hints.ai_protocol = 0;  /* Any protocol */
 
-	/* SECTION A - pre-socket setup; getaddrinfo() */
-
 	s = getaddrinfo(argv[1], argv[2], &hints, &result);
 	if (s != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
 		exit(EXIT_FAILURE);
 	}
-
 
 	sfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
 
@@ -97,12 +90,10 @@ int main(int argc, char *argv[]) {
 		local_addr = (struct sockaddr *)&local_addr_in6;
 	}
 	
-	if (result == NULL) {   /* No address succeeded */
+	if (result == NULL) {
 		fprintf(stderr, "Could not connect\n");
 		exit(EXIT_FAILURE);
 	}
-
-	// freeaddrinfo(result);   /* No longer needed */
 
 	s = getsockname(sfd, local_addr, &addr_len);
 	if (addr_fam == AF_INET) {
@@ -116,8 +107,7 @@ int main(int argc, char *argv[]) {
 	}
 
 
-
-	/**** Level 0 *****/
+	/**** 1st Request *****/
 
 	char treasure[1024];
 	int t_ptr = 0;
@@ -133,38 +123,28 @@ int main(int argc, char *argv[]) {
 		exit(-1);
 	}
 
-	// Print server's response
-	// print_bytes(response_0, r);
 
 	// Extract data from response
 	int chunk_l_0 = response_0[0];
 	if (chunk_l_0 == 0){
-		//printf("No more Treasure!\n");
+		printf("No TrEaSuRe fOr yOu!\n");
 		return 0;
 	} 
 	else if (chunk_l_0 > 127){
 		printf("Error getting respnse... Error: %d\n",chunk_l_0);
 		return -1;
 	}
-	if (verbose)
-		printf("chunk_l: %d\n", chunk_l_0);
 	
-	// char chunk_0[chunk_l_0 + 1];
+	
 	memcpy(&treasure[t_ptr], &response_0[1], chunk_l_0);
 	treasure[t_ptr + chunk_l_0] = 0;
 	t_ptr += chunk_l_0;
-	if (verbose)
-		printf("Treasure: %s\n", treasure);
 
 	int op_code_0 = response_0[chunk_l_0 + 1];
-	if (verbose)
-		printf("opcode: %d\n", op_code_0);
 
 	unsigned short op_param_0;
 	memcpy(&op_param_0, &response_0[chunk_l_0 + 2], 2);
 	unsigned short op_param_rev_0 = ntohs(op_param_0);
-	if (verbose)
-		printf("ocparam: %x\n", op_param_0);
 
 	// Op-Code 1 -> update remote port
 	if (op_code_0 == 1) {
@@ -192,27 +172,37 @@ int main(int argc, char *argv[]) {
 			perror("bind()");
 		}
 	}
-
+	
 	unsigned int nonce_0;
 	memcpy(&nonce_0, &response_0[chunk_l_0 + 4], 4);
-	if (verbose)
-		printf("nonce: %x\n", nonce_0);
 	
-	/**** Level 2-n *****/
+	/**** Prep next request *****/
 	char request[4];
 	unsigned int nonce_0_h = ntohl(nonce_0);
 	nonce_0_h += 1;
+	
+	// Op-Code 3 -> get nonce from random ports
+	if (op_code_0 == 3) {
+		unsigned short m = op_param_rev_0;
+		unsigned int sum = 0;
+		char buff[1];
+		struct sockaddr_in *new_port;
+
+		for (unsigned int i = 0; i < m; i++) {
+			int z = recvfrom(sfd, buff, 1, 0, new_port, 2);
+			sum += ntohs(new_port->sin_port);
+		}
+
+		nonce_0_h = sum + 1;
+	}
+
 	unsigned int nonce_rev_0 = htonl(nonce_0_h);
-	if (verbose)
-		printf("nonce_rev: %x\n",nonce_rev_0);
 	memcpy(&request, &nonce_rev_0, 4);
 
 	int chunk_l = 0;
 
 	do {
-		if (verbose)
-			printf("Starting 2nd\n");
-		// break;
+		
 		// Send request to server
 		sendto(sfd, request, 4, 0, remote_addr, addr_len);
 
@@ -224,36 +214,23 @@ int main(int argc, char *argv[]) {
 			exit(-1);
 		}
 
-		// Print server's response
-		//print_bytes(response, r);
-
 		// Extract data from response
 		chunk_l = response[0];
 		if (chunk_l > 127){
 			printf("Error getting response... Error: %d\n",chunk_l);
 			return -1;
 		}
-		if (verbose)
-			printf("chunk_l: %d\n", chunk_l);
 		
 		memcpy(&treasure[t_ptr], &response[1], chunk_l);
 		treasure[t_ptr + chunk_l] = 0;
 		t_ptr += chunk_l;
-		if (verbose)
-			printf("Treasure: %s\n", treasure);
 
 		int op_code = response[chunk_l + 1];
-		if (verbose)
-			printf("opcode: %d\n", op_code);
 
 		unsigned short op_param;
 		memcpy(&op_param, &response[chunk_l + 2], 2);
-		if (verbose)
-			printf("opparam: %x\n", op_param);
 
 		unsigned short op_param_rev = ntohs(op_param);
-		if (verbose)
-			printf("opparam_rev: %x\n", op_param_rev);
 
 		// Op-Code 1 -> update remote port
 		if (op_code == 1) {
@@ -280,22 +257,36 @@ int main(int argc, char *argv[]) {
 				perror("bind()");
 			}
 		}
+		else if (op_code == 4) {
+			break;
+		}
 
 		unsigned int nonce;
 		memcpy(&nonce, &response[chunk_l + 4], 4);
-		if (verbose)
-			printf("nonce: %x\n", nonce_0);
 		
 		/**** Next req *****/
 		unsigned int nonce_h = ntohl(nonce);
 		nonce_h += 1;
+
+		// Op-Code 3 -> get nonce from random ports
+		if (op_code == 3) {
+			unsigned short m = op_param_rev;
+			unsigned int sum = 0;
+			char buff[1];
+			struct sockaddr_in new_port;
+			int len = sizeof(new_port);
+
+			for (unsigned int i = 0; i < m; i++) {
+				int z = recvfrom(sfd, buff, 1, 0, (struct sockaddr *)&new_port, (socklen_t *)&len);
+				sum += ntohs(new_port.sin_port);
+			}
+
+			nonce_h = sum + 1;
+		}
+
 		unsigned int nonce_rev = htonl(nonce_h);
-		if (verbose)
-			printf("nonce_rev: %x\n",nonce_rev);
 		memcpy(&request, &nonce_rev, 4);
 
-		if (verbose)
-			printf("Got another response\n");
 	} while (chunk_l > 0);
 
 	// Print final treasure
