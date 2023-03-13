@@ -145,6 +145,7 @@ happens:
  - you have read the entire HTTP response from the server.  Since this is
    HTTP/1.0, this is when the call to `read()` (or `recv()`) returns 0,
    indicating that the server has closed the connection.  If this is the case:
+   - clean up server socket.
    - register the client socket with the epoll instance for writing.
    - change state to `SEND_RESPONSE`.
  - `read()` (or `recv()`) returns a value less than 0.
@@ -219,23 +220,23 @@ each of these members.
 Read the following in preparation for this assignment:
 
  - Sections 11.1 - 11.6, 12.1 - 12.2 in the book
- - `epoll` - general overview of epoll, including detailed examples
+ - `epoll (7)` - general overview of epoll, including detailed examples
 
 Additionally, man pages for the following are referenced throughout the
 assignment:
 
- - `epoll_create1` - shows the usage of the simple function to create an
+ - `epoll_create1()` - shows the usage of the simple function to create an
    epoll instance
- - `epoll_ctl` - shows the definition of the `epoll_data_t` and
+ - `epoll_ctl()` - shows the definition of the `epoll_data_t` and
    `struct epoll_event` structures, which are used by both `epoll_ctl()` and
    `epoll_wait()`.  Also describes the event types with which events are
    registered to an epoll instance, e.g., for reading or writing, and which
    type of triggering is used (for this lab you will use edge-triggered
    monitoring).
- - `epoll_wait` - shows the usage of the simple `epoll_wait()` function,
+ - `epoll_wait()` - shows the usage of the simple `epoll_wait()` function,
    including how events are returned and how errors are indicated,
- - `fnctl()`
- - `socket`
+ - `fcntl()`
+ - `socket (7)`
  - `socket()`
  - `send()`
  - `recv()`

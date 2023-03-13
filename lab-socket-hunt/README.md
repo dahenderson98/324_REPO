@@ -330,7 +330,7 @@ The following is an explanation of each field:
    order, is a nonce.  The value of this nonce, plus one, should be returned in
    every communication back to the server.
 
-Extract the chunk length, the chunk, treasure chunk, the op-code, the op-param,
+Extract the chunk length, the treasure chunk, the op-code, the op-param,
 and the nonce using the hints in the [message formatting](#message-formatting)
 section), storing them in variables of the appropriate types, so you can work
 with them.  Print them out to verify that you have extracted them properly, and
