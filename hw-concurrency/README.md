@@ -67,9 +67,8 @@ panes, and press enter.  Repeat with the second and third "client" panes, _in
 that order_.  In the "analysis" pane run the following:
 
 ```bash
-$ ps -Lo user,pid,ppid,nlwp,lwp,state,ucmd -C echoserveri | grep ^username\\\|USER
+$ ps -Lo user,pid,ppid,nlwp,lwp,state,ucmd -C echoserveri | grep ^$(whoami)\\\|USER
 ```
-(Replace `username` with your actual username)
 
 The `ps` command lists information about processes that currently exist on the
 system.  The `-L` option tells us to show threads ("lightweight processes") as

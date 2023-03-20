@@ -20,17 +20,18 @@ using `fork()` and `execve()`.  Your program should do the following:
    server will have sent the first line of the response and some headers.  Your
    program should send the headers indicating the type of the content (which
    will be "text/plain" and the length of the content, which is just the length
-   (in bytes) of the response body.  For example:
+   (in bytes) of the entire response body.  For example:
 
    ```
    Content-type: text/plain
    Content-length: 5
    ```
- - Send the following string to the client as a response body:
+ - Send (only) the following string to the client as a response body:
    ```
    The query string is: Q
    ```
-   But replace `Q` with the actual query string provided by the client.
+   But replace `Q` with the actual query string provided by the client.  There
+   should be no characters (including `'\r'` or `'\n'`) after the query string.
 
 Name your file `cgiprog.c`.  
 

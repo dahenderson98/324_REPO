@@ -14,7 +14,7 @@ programming by building a working HTTP proxy server with a threadpool.
    - [Part 1 - HTTP Request Parsing](#part-1---http-request-parsing)
      - [`all_headers_received`](#all_headers_received)
      - [`parse_request`](#parse_request)
-     - [`Testing`](#testing)
+     - [Testing](#testing)
    - [Part 2 - Sequential HTTP Proxy](#part-2---sequential-http-proxy)
      - [Receiving the HTTP Request](#receiving-the-http-request)
      - [Creating an HTTP Request](#creating-an-http-request)
@@ -147,8 +147,9 @@ For the purposes of this lab, you can use the following simplified rules:
      the first space comprise the _request method_.
    - All characters between the first space and the second space
      (non-inclusive) comprise the _URL_.
-   - All characters after the first end-of-header sequence `\r\n\r\n` comprise
-     the _headers_.  You do not need to further parse the headers.
+   - All characters after the first line (i.e., after the first `\r\n`
+     sequence) comprise the _headers_.  You do not need to further parse the
+     headers.
  - For the URL extracted from the HTTP request:
    - If there is a colon `:` in the URL _after_ the `://`, then:
      - the digits immediately following the colon comprise the _port_;
@@ -224,7 +225,7 @@ Write functions for each of the following:
    `accept()`, handle a client HTTP request.  For now, just have this method do
    the following:
    - Read from the socket into a buffer until the entire HTTP request has been
-     received (again, there are no request headers in this lab, so this is
+     received (again, there is no request body in this lab, so this is
      basically just end of headers).  Use the `parse_request()` function for this.
    - Print out the values from the HTTP request, once you have received it in
      its entirety (e.g., like `test_parser()` does).
@@ -500,7 +501,7 @@ Now that you have some experience with multi-threaded server, change your proxy
 server to use a pool of threads to handle concurrent HTTP requests instead of
 launching a new thread for each request.
 
-When the program starts, initialize eight producer threads, a shared buffer
+When the program starts, initialize eight consumer threads, a shared buffer
 (queue) with five slots, and the associated semaphores and other shared data
 structures to prepare the producer and consumers for handling concurrent
 requests.  Formulate your producer loop, so that every time a new client
