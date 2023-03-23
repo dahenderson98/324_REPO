@@ -9,28 +9,33 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <semaphore.h>
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
+#define BIG_BUFF_SIZE 50000
 #define MAX_LINE 256
 #define BUF_SIZE 500
 #define MAXLINE 8192
-
 #define SO_REUSEPORT 15
+#define NTHREADS 8
+#define SBUFSIZE 5
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
 
 int all_headers_received(char *);
 int parse_request(char *, char *, char *, char *, char *, char *);
 int open_sfd();
-void *handle_client(void *vargp); 
+void handle_client(int);
+void *handle_clients(void *); 
 void test_parser();
 void print_bytes(unsigned char *, int);
 
+// Socket data structures
 struct addrinfo hints;
 struct addrinfo *result, *rp;
-int sfd, s, j, portindex;
+int sfd, connfd, s, j, portindex;
 size_t len;
 ssize_t nread;
 char buf[BUF_SIZE];
@@ -45,22 +50,99 @@ struct sockaddr_in local_addr_in;
 struct sockaddr *local_addr;
 unsigned short local_port;
 
+// Threadpool data structures
+
+/* $begin sbuft */
+typedef struct {
+    int *buf;          /* Buffer array */         
+    int n;             /* Maximum number of slots */
+    int front;         /* buf[(front+1)%n] is first item */
+    int rear;          /* buf[rear%n] is last item */
+    sem_t mutex;       /* Protects accesses to buf */
+    sem_t slots;       /* Counts available slots */
+    sem_t items;       /* Counts available items */
+} sbuf_t;
+/* $end sbuft */
+
+void sbuf_init(sbuf_t *sp, int n);
+void sbuf_deinit(sbuf_t *sp);
+void sbuf_insert(sbuf_t *sp, int item);
+int sbuf_remove(sbuf_t *sp);
+
+/* Create an empty, bounded, shared FIFO buffer with n slots */
+/* $begin sbuf_init */
+void sbuf_init(sbuf_t *sp, int n) {
+    sp->buf = calloc(n, sizeof(int)); 
+    sp->n = n;                       /* Buffer holds max of n items */
+    sp->front = sp->rear = 0;        /* Empty buffer iff front == rear */
+    sem_init(&sp->mutex, 0, 1);      /* Binary semaphore for locking */
+    sem_init(&sp->slots, 0, n);      /* Initially, buf has n empty slots */
+    sem_init(&sp->items, 0, 0);      /* Initially, buf has zero data items */
+}
+/* $end sbuf_init */
+
+/* Clean up buffer sp */
+/* $begin sbuf_deinit */
+void sbuf_deinit(sbuf_t *sp) {
+    free(sp->buf);
+}
+/* $end sbuf_deinit */
+
+/* Insert item onto the rear of shared buffer sp */
+/* $begin sbuf_insert */
+void sbuf_insert(sbuf_t *sp, int item) {
+    // printf("before sem_wait(&sp->slots)\n"); fflush(stdout);
+    sem_wait(&sp->slots);                          /* Wait for available slot */
+    // printf("after sem_wait(&sp->slots)\n"); fflush(stdout);
+    sem_wait(&sp->mutex);                          /* Lock the buffer */
+    sp->buf[(++sp->rear)%(sp->n)] = item;   /* Insert the item */
+    sem_post(&sp->mutex);                          /* Unlock the buffer */
+    // printf("before sem_post(&sp->items)\n"); fflush(stdout);
+    sem_post(&sp->items);                          /* Announce available item */
+    // printf("after sem_post(&sp->items)\n"); fflush(stdout);
+}
+/* $end sbuf_insert */
+
+/* Remove and return the first item from buffer sp */
+/* $begin sbuf_remove */
+int sbuf_remove(sbuf_t *sp) {
+    int item;
+    // printf("before sem_wait(&sp->items)\n"); fflush(stdout);
+    sem_wait(&sp->items);                          /* Wait for available item */
+    // printf("after sem_wait(&sp->items)\n"); fflush(stdout);
+    sem_wait(&sp->mutex);                          /* Lock the buffer */
+    item = sp->buf[(++sp->front)%(sp->n)];  /* Remove the item */
+    sem_post(&sp->mutex);                          /* Unlock the buffer */
+    // printf("before sem_post(&sp->slots)\n"); fflush(stdout);
+    sem_post(&sp->slots);                          /* Announce available slot */
+    // printf("after sem_post(&sp->slots)\n"); fflush(stdout);
+    return item;
+}
+/* $end sbuf_remove */
+/* $end sbufc */
+
+sbuf_t sbuf; /* Shared buffer of connected descriptors */
+
 int main(int argc, char *argv[])
 {
-	pthread_t tid; 
-	int server_sfd;
-	if((server_sfd = open_sfd(argc, argv)) < 0) {
+	pthread_t tid;
+
+	if((sfd = open_sfd(argc, argv)) < 0) {
 		perror("opening file server socket");
 		return -1;
 	}
 
+	// Create worker threads
+	sbuf_init(&sbuf, SBUFSIZE);
+	for (int i = 0; i < NTHREADS; i++)
+		pthread_create(&tid, NULL, handle_clients, NULL);
+
 	while(1) {
 		// accept() a client connection
-		int *client_sfd = malloc(sizeof(int));
-		*client_sfd = accept(server_sfd, (struct sockaddr *) &remote_addr, &addr_len);
+		connfd = accept(sfd, remote_addr, &addr_len);
 
-		// call handle_client() to handle the connection
-		pthread_create(&tid, NULL, handle_client, client_sfd);
+		// Insert connfd in buffer
+		sbuf_insert(&sbuf, connfd);
 	}
 
 	return 0;
@@ -166,19 +248,15 @@ int open_sfd(int argc, char *argv[]) {
 	return sfd;
 }
 
-void *handle_client(void *vargp) {
-	int client_sfd = *((int *)vargp);
-	pthread_detach(pthread_self());
-	free(vargp);
-	int BIG_BUFF_SIZE = 50000;
+void handle_client(int connfd) {
 	char request[BIG_BUFF_SIZE], fwd[BIG_BUFF_SIZE];
 	memset(&request[0], 0, BIG_BUFF_SIZE);
 	memset(&fwd[0], 0, BIG_BUFF_SIZE);
 	int rtotal_read = 0;
 	int rbytes_read = 0;
-	int debug = 1;
+	int debug = 0;
 	do {
-		rbytes_read = recv(client_sfd, request + rtotal_read, 512, 0);
+		rbytes_read = recv(connfd, request + rtotal_read, 512, 0);
 		rtotal_read += rbytes_read;
 		if(rbytes_read <= 0){
 			break;
@@ -188,16 +266,21 @@ void *handle_client(void *vargp) {
 	
 	// Test parsing
 	if(debug) printf("Request Received: \n%s\n",request);
-	char method[16], hostname[64], port[8], path[64], headers[1024];
+	char *method, *hostname, *port, *path, *headers;
+	method = (char *) malloc(16);
+	hostname = (char *) malloc(64);
+	port = (char *) malloc(8);
+	path = (char *) malloc(64);
+	headers = (char *) malloc(1024);
 	if(parse_request(request, method, hostname, port, path, headers)) {
 		if(debug){
 			printf("Parsed: \n");
 			printf("METHOD: %s\n", method);
 			printf("HOSTNAME: %s\n", hostname);
-			printf("PORT: %s\n", port);
+			printf("PORT: %s\n", port); 
 			printf("PATH: %s\n", path);
 			printf("HEADERS: %s\n", headers);
-		}
+		} 
 	} else {
 		if(debug) printf("REQUEST INCOMPLETE\n");
 	}
@@ -213,8 +296,6 @@ void *handle_client(void *vargp) {
 	// Add HTTP v1.0
 	strcat(fwd, "HTTP/1.0\r\n");
 
-	// int headers_len = 0;
-
 	// Add Host header
 	char host_header[100] = "Host: ";
 	strcat(host_header, hostname);
@@ -224,20 +305,16 @@ void *handle_client(void *vargp) {
 	}
 	strcat(host_header, "\r\n");
 	strcat(fwd, host_header);
-	// headers_len += strlen(host_header);
 
 	// Add User-Agent header
 	strcat(fwd, user_agent_hdr);
 	strcat(fwd, "\r\n");
-	// headers_len += strlen(user_agent_hdr) + 2;
 
 	// Add Connection header
 	strcat(fwd, "Connection: close\r\n");
-	// headers_len += 19;
 
 	// Add Proxy-Connection header
 	strcat(fwd, "Proxy-Connection: close\r\n");
-	// headers_len += 25;
 
 	// End headers
 	strcat(fwd, "\r\n");
@@ -255,7 +332,7 @@ void *handle_client(void *vargp) {
 
 	memset(&hints2, 0, sizeof(struct addrinfo));
 	hints2.ai_family = af;    /* Allow IPv4, IPv6, or both, depending on
-				    what was specified on the command line. */
+					what was specified on the command line. */
 	hints2.ai_socktype = SOCK_STREAM; /* Datagram socket */
 	hints2.ai_flags = 0;
 	hints2.ai_protocol = 0;  /* Any protocol */
@@ -278,14 +355,10 @@ void *handle_client(void *vargp) {
 		
 		remote_addr_in2 = *(struct sockaddr_in *)rp2->ai_addr;
 		inet_ntop(addr_fam, &remote_addr_in2.sin_addr, remote_addr_str, addr_len2);
-		// remote_port2 = ntohs(remote_addr_in2.sin_port);
 		remote_addr2 = (struct sockaddr *)&remote_addr_in2;
 		local_addr2 = (struct sockaddr *)&local_addr_in2;
-		
-		// fprintf(stderr, "Connecting to %s:%d (family: %d, len: %d)\n", remote_addr_str, remote_port, addr_fam, addr_len);
 
-		/* if connect is successful, then break out of the loop; we
-		 * will use the current address */
+		// If connect is successful, then break out of the loop; we will use the current address
 		if(connect(server_sfd2, remote_addr2, addr_len2) != -1)
 			break;  /* Success */
 
@@ -319,6 +392,8 @@ void *handle_client(void *vargp) {
 		total_sent += bytes_sent;
 	} while(bytes_sent == 512 && total_sent <= strlen(fwd));
 
+	if (debug) printf("before server response\n");
+
 	// Read response from server
 	char response[BIG_BUFF_SIZE];
 	memset(&response[0], 0, BIG_BUFF_SIZE);
@@ -335,18 +410,29 @@ void *handle_client(void *vargp) {
 
 	close(server_sfd2);
 
-	printf("Bytes read: %d\nResponse from server:\n%s\n", restotal_read, response);
+	if (debug) printf("Bytes read: %d\nResponse from server:\n%s\n", restotal_read, response);
 
 	// Forward server's response to client
-	if(write(client_sfd, response, restotal_read) < 0) {
+	if(write(connfd, response, restotal_read) < 0) {
 		perror("returning response to client");
 	}
 
+	free(hostname);
+	free(port);
+	free(path);
+	free(headers);
+
 	sleep(2);
-	// Close client connection
-	close(client_sfd);
-	
-	return NULL;
+}
+
+void *handle_clients(void *vargp) {
+	pthread_detach(pthread_self());
+
+	while(1) {
+		int connfd = sbuf_remove(&sbuf);
+		handle_client(connfd);
+		close(connfd);
+	}
 }
 
 void test_parser() {
