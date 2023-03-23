@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <pthread.h>
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -23,7 +24,7 @@ static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel M
 int all_headers_received(char *);
 int parse_request(char *, char *, char *, char *, char *, char *);
 int open_sfd();
-void handle_client(); 
+void *handle_client(void *vargp); 
 void test_parser();
 void print_bytes(unsigned char *, int);
 
@@ -46,6 +47,7 @@ unsigned short local_port;
 
 int main(int argc, char *argv[])
 {
+	pthread_t tid; 
 	int server_sfd;
 	if((server_sfd = open_sfd(argc, argv)) < 0) {
 		perror("opening file server socket");
@@ -54,10 +56,11 @@ int main(int argc, char *argv[])
 
 	while(1) {
 		// accept() a client connection
-		int client_sfd = accept(server_sfd, (struct sockaddr *) &remote_addr, &addr_len);
+		int *client_sfd = malloc(sizeof(int));
+		*client_sfd = accept(server_sfd, (struct sockaddr *) &remote_addr, &addr_len);
 
 		// call handle_client() to handle the connection
-		handle_client(client_sfd);
+		pthread_create(&tid, NULL, handle_client, client_sfd);
 	}
 
 	return 0;
@@ -163,7 +166,10 @@ int open_sfd(int argc, char *argv[]) {
 	return sfd;
 }
 
-void handle_client(int client_sfd) {
+void *handle_client(void *vargp) {
+	int client_sfd = *((int *)vargp);
+	pthread_detach(pthread_self());
+	free(vargp);
 	int BIG_BUFF_SIZE = 50000;
 	char request[BIG_BUFF_SIZE], fwd[BIG_BUFF_SIZE];
 	memset(&request[0], 0, BIG_BUFF_SIZE);
@@ -340,6 +346,7 @@ void handle_client(int client_sfd) {
 	// Close client connection
 	close(client_sfd);
 	
+	return NULL;
 }
 
 void test_parser() {
