@@ -634,8 +634,8 @@ for testing:
 
     Replace `port` with the port returned by `./port-for-user.pl`.
 
-With `tiny` running on one port (`port`) and your proxy server running on
-another port (`port2`), both on the same system, try running the following:
+With `tiny` running on one port (`port2`) and your proxy server running on
+another port (`port`), both on the same system, try running the following:
 
 ```bash
 $ curl -o tmp1 http://localhost:port2/home.html
