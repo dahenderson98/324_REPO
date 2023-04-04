@@ -58,7 +58,6 @@ struct sockaddr *local_addr;
 unsigned short local_port;
 
 // EPOLL data structures
-int efd;
 struct epoll_event event;
 struct epoll_event events[MAXEVENTS];
 int i;
@@ -73,7 +72,7 @@ int debug = 1;
 int all_headers_received(char *);
 int parse_request(char *, char *, char *, char *, char *, char *);
 int open_sfd();
-void handle_new_clients(int sfd, int efd);
+void handle_new_clients(int sfd, int _efd);
 void handle_client(); 
 void test_parser();
 void print_bytes(unsigned char *, int);
@@ -81,6 +80,8 @@ void print_bytes(unsigned char *, int);
 
 int main(int argc, char *argv[])
 {
+	
+	int efd;
 	// Create an epoll instance
 	if ((efd = epoll_create1(0)) < 0) {
 		perror("Error with epoll_create1");
@@ -116,13 +117,13 @@ int main(int argc, char *argv[])
 	int j = 0;
 	while (1) {
 		j++;
-		if (debug) printf("%d: before epoll_wait\n",j);
+		// if (debug) printf("%d: before epoll_wait, efd: %d\n",j, efd);
 		int n;
 		if ((n = epoll_wait(efd, events, MAXEVENTS, 1000)) < 0) {
 			perror("epoll_wait");
 			exit(1);
 		}
-		if (debug) printf("after epoll_wait, n = %d\n", n);
+		// if (debug) printf("after epoll_wait, n = %d\n", n);
 		
 		// Loop through all events and handle each appropriately
 		for (i = 0; i < n; i++) {
@@ -142,10 +143,12 @@ int main(int argc, char *argv[])
 				free(active_client);
 				continue;
 			}
-			if (debug) printf("sfd: %d\n",sfd);
+			// if (debug) printf("sfd: %d\n",sfd);
 
 			if (sfd == active_client->fd) {
-				handle_new_clients(active_client->fd, efd);
+				// printf("efd: %d\n",efd);
+				int _efd = efd;
+				handle_new_clients(active_client->fd, _efd);
 			}
 			else {
 				
@@ -211,12 +214,13 @@ int open_sfd (int argc, char *argv[]) {
 	return sfd;
 }
 
-void handle_new_clients (int fd, int efd) {
+void handle_new_clients (int fd, int _efd) {
 	int connfd;
 	socklen_t remote_addr_len = sizeof(struct sockaddr_storage);
 
 	// Loop to accept any and all client connections
 	while (1) {
+		remote_addr_len = sizeof(struct sockaddr_storage);
 		connfd = accept(fd, (struct sockaddr *)&remote_addr, &remote_addr_len);
 
 		if (connfd < 0) {
@@ -230,37 +234,30 @@ void handle_new_clients (int fd, int efd) {
 			}
 		}
 
-		printf("New fd: %d\n", connfd);
-
 		// set client file descriptor non-blocking
 		if (fcntl(connfd, F_SETFL, fcntl(connfd, F_GETFL, 0) | O_NONBLOCK) < 0) {
 			fprintf(stderr, "error setting socket option\n");
 			exit(1);
 		}
 
-		// Allocate memory for a new struct client_info, and populate it with info for the new client
+		// allocate memory for a new struct
+		// client_info, and populate it with
+		// info for the new client
 		new_client = (struct client_info *)malloc(sizeof(struct client_info));
-		// new_client->fd = connfd;
-		// new_client->total_length = 0;
-		// sprintf(new_client->desc, "Client with file descriptor %d", connfd);
+		new_client->fd = connfd;
+		new_client->total_length = 0;
+		sprintf(new_client->desc, "Client with file descriptor %d", connfd);
 
-		// new_client->cfd = connfd;
-		// new_client->n_read_from_c = 0;
-		// new_client->n_to_write_to_s = 0;
-		// new_client->n_written_to_s = 0;
-		// new_client->n_read_from_s = 0;
-		// new_client->n_written_to_c = 0;
-		// sprintf(new_client->desc, "Client with file descriptor %d", connfd);
-
-		// Register the client file descriptor for incoming events using edge-triggered monitoring
+		// register the client file descriptor
+		// for incoming events using
+		// edge-triggered monitoring
 		event.data.ptr = new_client;
 		event.events = EPOLLIN | EPOLLET;
-		if (epoll_ctl(efd, EPOLL_CTL_ADD, connfd, &event) < 0) {
+		
+		if (epoll_ctl(_efd, EPOLL_CTL_ADD, connfd, &event) < 0) {
 			fprintf(stderr, "error adding event\n");
 			exit(1);
 		}
-
-		free(new_client);
 	}
 }
 
