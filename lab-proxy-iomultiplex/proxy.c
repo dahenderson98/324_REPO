@@ -22,6 +22,12 @@
 #define SO_REUSEPORT 15
 
 struct client_info {
+	int fd;
+	int total_length;
+	char desc[1024];
+};
+
+struct conn_info {
     char *buf;             /* Buffer array for reading and writing */         
     int cfd;               /* Client socket file descriptor */
     int sfd;               /* Server socket file descriptor */
@@ -56,18 +62,18 @@ int efd;
 struct epoll_event event;
 struct epoll_event events[MAXEVENTS];
 int i;
-int len;
 
 struct client_info *new_client;
 struct client_info *listener;
 struct client_info *active_client;
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
+int debug = 1;
 
 int all_headers_received(char *);
 int parse_request(char *, char *, char *, char *, char *, char *);
 int open_sfd();
-void handle_new_clients(int efd);
+void handle_new_clients(int sfd, int efd);
 void handle_client(); 
 void test_parser();
 void print_bytes(unsigned char *, int);
@@ -82,32 +88,76 @@ int main(int argc, char *argv[])
 	}
 
 	// Get listening socket
-	int server_sfd;
-	if((server_sfd = open_sfd(argc, argv)) < 0) {
+	int sfd;
+	if((sfd = open_sfd(argc, argv)) < 0) {
 		perror("opening file server socket");
 		return -1;
 	}
 
-	/* Register your listen socket with the epoll instance that you created, 
-	   for reading and for edge-triggered monitoring */
-	
+	// Allocate memory for a new struct client_info, and populate it with
+	// info for the listening socket
+	listener = malloc(sizeof(struct client_info));
+	listener->fd = sfd;
+	// sprintf(listener->desc, "Listen file descriptor (accepts new clients)");
 
-	while(1) {
+	if (debug) printf("before epoll_ctl\n");
 
-		int e = epoll_wait(efd, events, MAXEVENTS, 1);
-		
-		/*
-		// accept() a client connection
-		int client_sfd = accept(server_sfd, (struct sockaddr *) &remote_addr, &addr_len);
-
-		// call handle_client() to handle the connection
-		handle_client(client_sfd);
-		*/
+	// Register your listening proxy server socket with the epoll instance that you created, 
+	// for reading and for edge-triggered monitoring
+	event.data.ptr = listener;
+	event.events = EPOLLIN | EPOLLET;
+	if (epoll_ctl(efd, EPOLL_CTL_ADD, sfd, &event) < 0) {
+		fprintf(stderr, "error adding event\n");
+		exit(EXIT_FAILURE);
 	}
+
+	if (debug) printf("after epoll_ctl\n");
+
+	int j = 0;
+	while (1) {
+		j++;
+		if (debug) printf("%d: before epoll_wait\n",j);
+		int n;
+		if ((n = epoll_wait(efd, events, MAXEVENTS, 1000)) < 0) {
+			perror("epoll_wait");
+			exit(1);
+		}
+		if (debug) printf("after epoll_wait, n = %d\n", n);
+		
+		// Loop through all events and handle each appropriately
+		for (i = 0; i < n; i++) {
+			
+			// grab the data structure from the event, and cast it
+			// (appropriately) to a struct client_info *.
+			active_client = (struct client_info *)(events[i].data.ptr);
+
+			if (debug) printf("New event for fd %d (%s)\n", active_client->fd, active_client->desc);
+
+			if ((events[i].events & EPOLLERR) ||
+					(events[i].events & EPOLLHUP) ||
+					(events[i].events & EPOLLRDHUP)) {
+				// An error has occured on this fd 
+				fprintf(stderr, "epoll error on fd %d\n", events[i].data.fd);
+				close(events[i].data.fd);
+				free(active_client);
+				continue;
+			}
+			if (debug) printf("sfd: %d\n",sfd);
+
+			if (sfd == active_client->fd) {
+				handle_new_clients(active_client->fd, efd);
+			}
+			else {
+				
+			}
+		}
+	}
+	free(listener);
+
 	return 0;
 }
 
-int open_sfd(int argc, char *argv[]) {
+int open_sfd (int argc, char *argv[]) {
 	int portindex;
 	unsigned short port;
 	int address_family;
@@ -161,13 +211,13 @@ int open_sfd(int argc, char *argv[]) {
 	return sfd;
 }
 
-void handle_new_clients(int efd) {
+void handle_new_clients (int fd, int efd) {
 	int connfd;
 	socklen_t remote_addr_len = sizeof(struct sockaddr_storage);
 
 	// Loop to accept any and all client connections
-	while(1) {
-		connfd = accept(efd, (struct sockaddr *)&remote_addr, &remote_addr_len);
+	while (1) {
+		connfd = accept(fd, (struct sockaddr *)&remote_addr, &remote_addr_len);
 
 		if (connfd < 0) {
 			if (errno == EWOULDBLOCK ||
@@ -180,6 +230,8 @@ void handle_new_clients(int efd) {
 			}
 		}
 
+		printf("New fd: %d\n", connfd);
+
 		// set client file descriptor non-blocking
 		if (fcntl(connfd, F_SETFL, fcntl(connfd, F_GETFL, 0) | O_NONBLOCK) < 0) {
 			fprintf(stderr, "error setting socket option\n");
@@ -188,12 +240,16 @@ void handle_new_clients(int efd) {
 
 		// Allocate memory for a new struct client_info, and populate it with info for the new client
 		new_client = (struct client_info *)malloc(sizeof(struct client_info));
-		new_client->cfd = connfd;
-		new_client->n_read_from_c = 0;
-		new_client->n_to_write_to_s = 0;
-		new_client->n_written_to_s = 0;
-		new_client->n_read_from_s = 0;
-		new_client->n_written_to_c = 0;
+		// new_client->fd = connfd;
+		// new_client->total_length = 0;
+		// sprintf(new_client->desc, "Client with file descriptor %d", connfd);
+
+		// new_client->cfd = connfd;
+		// new_client->n_read_from_c = 0;
+		// new_client->n_to_write_to_s = 0;
+		// new_client->n_written_to_s = 0;
+		// new_client->n_read_from_s = 0;
+		// new_client->n_written_to_c = 0;
 		// sprintf(new_client->desc, "Client with file descriptor %d", connfd);
 
 		// Register the client file descriptor for incoming events using edge-triggered monitoring
@@ -203,6 +259,8 @@ void handle_new_clients(int efd) {
 			fprintf(stderr, "error adding event\n");
 			exit(1);
 		}
+
+		free(new_client);
 	}
 }
 
