@@ -1,7 +1,6 @@
 /* $begin sbufc */
 #include "sbuf.h"
 #include <stdio.h>
-#include <stdio.h>
 
 /* Create an empty, bounded, shared FIFO buffer with n slots */
 /* $begin sbuf_init */

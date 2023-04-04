@@ -20,6 +20,7 @@ def main():
         if val in SUMS:
             print('PASS')
         else:
+            print(val) # REMOVE THIS LINE!!
             print('FAIL')
 
 if __name__ == '__main__':

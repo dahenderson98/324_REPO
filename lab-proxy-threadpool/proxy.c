@@ -192,7 +192,6 @@ int parse_request(char *request, char *method,
 		hostname[(sec_colon - 1) - (slashes + 1)] = 00;
 		strncpy(port, sec_colon + 1, third_fs - (sec_colon + 1));
 		port[third_fs - (sec_colon + 1)] = 00;
-
 	}
 
 	// Get path from end of URL

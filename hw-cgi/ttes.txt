@@ -1,0 +1,4 @@
+Content-type: text/plain
+Content-length: 11
+
+The query string is: foo=bar

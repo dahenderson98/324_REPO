@@ -10,12 +10,8 @@ concepts by building a working HTTP proxy server that uses epoll.
 
 
  - [Overview](#overview)
-   - [Non-Blocking I/O](#non-blocking-io)
-   - [Client Request States](#client-request-states)
-   - [Client Request Data](#client-request-data)
  - [Preparation](#preparation)
    - [Reading](#reading)
-   - [epoll Echo Server Example](#epoll-echo-server-example)
  - [Instructions](#instructions)
    - [Part 1 - HTTP Request Parsing](#part-1---http-request-parsing)
    - [Part 2 - I/O Multiplexing HTTP Proxy](#part-2---io-multiplexing-http-proxy)
@@ -25,6 +21,11 @@ concepts by building a working HTTP proxy server that uses epoll.
      - [Communicating with the HTTP Server](#communicating-with-the-http-server)
      - [Returning the HTTP Response](#returning-the-http-response)
      - [Testing](#testing)
+ - [Additional Resources](#additional-resources)
+   - [Non-Blocking I/O](#non-blocking-io)
+   - [Client Request States](#client-request-states)
+   - [Client Request Data](#client-request-data)
+   - [epoll Echo Server Example](#epoll-echo-server-example)
  - [Testing](#testing-1)
    - [Manual Testing - Non-Local Server](#manual-testing---non-local-server)
    - [Manual Testing - Local Server](#manual-testing---local-server)
@@ -46,171 +47,6 @@ holding the processor longer because it is not blocking (and thus sleeping) on
 I/O.  This model is also referred to as an example of *event-based* programming,
 wherein execution of code is dependent on "events"--in this case the
 availability of I/O.
-
-
-## Non-Blocking I/O
-
-All sockets that your proxy will use should be set up for non-blocking I/O.
-This includes the listen socket, the sockets associated with communications
-between client and proxy, and the sockets associated with communications
-between proxy and server.
-
-Additionally, all sockets must be registered with the epoll instance, for
-reading or writing, using edge-triggered monitoring.
-
-That being said, for simplicity, you may wait to set the proxy-to-server socket
-as non-blocking *after* you call `connect()`, rather than before.  While that
-will mean that your server not fully non-blocking, it will allow you to focus
-on the more important parts of I/O multiplexing.  This is permissible.
-
-If you instead choose to set the socket as non-blocking before calling
-`connect()` (this is not required), you can execute `connect()` immediately,
-but you cannot initiate the `write()` call until `epoll_wait()` indicates that
-this socket is ready for writing. Because the socket is non-blocking,
-`connect()` will return before the connection is actually established.  In this
-case, the return value is -1 and `errno` is set to `EINPROGRESS` (see the
-`connect()` man page).  This also means that when iterating through the results
-of `getaddrinfo()` when a socket is non-blocking, the return value of
-`connect()` is not a useful check for determining whether a given address is
-reachable.
-
-
-## Client Request States
-
-A server that uses I/O multiplexing will handle multiple clients concurrently
-using only a single thread.  That means that it only acts on a given client
-when there is I/O associated with that client.  But because handling a proxy
-client involves various tasks (e.g., receive request from client, send request
-to server, etc.), it is helpful to think about the problem in terms of
-"states" and events that trigger transitions between these states.  The
-following is an example of a set of client request states, each associated with
-different I/O operations related to proxy server operation:
-
-
-### `READ_REQUEST`
-
-This is the start state for every new client request.  You should initialize
-every new client request to be in this state.
-
-In this state, read from the client socket in a loop until one of the following
-happens:
-
- - you have read the entire HTTP request from the client.  If this is the case:
-   - parse the client request and create the request that you will send to the
-     server.
-   - create a new socket and connect to the HTTP server.
-   - configure the new socket as non-blocking.
-   - register the socket with the epoll instance for writing.
-   - change state to `SEND_REQUEST`.
- - `read()` (or `recv()`) returns a value less than 0.
-   - If `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is no
-     more data ready to be read; you will continue reading from the socket when
-     you are notified by epoll that there is more data to be read.
-   - If `errno` is anything else, this is an error.  You can print out the
-     error, cancel your client request, and deregister your socket at this
-     point.
-
-
-### `SEND_REQUEST`
-
-You reach this state only after the entire request has been received from the
-client and the connection to the server has been initiated (i.e., in the
-`READ_REQUEST` state).
-
-In this state, loop to write the request to the server socket until one of the
-following happens:
-
- - you have written the entire HTTP request to the server socket.  If this is
-   the case:
-   - register the socket with the epoll instance for reading.
-   - change state to `READ_RESPONSE`.
- - `write()` (or `send()`) returns a value less than 0.
-   - If and `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is
-     no buffer space available for writing to the socket; you will continue
-     writing to the socket when you are notified by epoll that there is more
-     buffer space available for writing.
-   - If `errno` is anything else, this is an error.  You can print out the
-     error, cancel your client request, and deregister your socket at this
-     point.
-
-
-### `READ_RESPONSE`
-
-You reach this state only after you have sent the entire HTTP request (i.e., in
-the `SEND_REQUEST` state) to the Web server.
-
-In this state, loop to read from the server socket until one of the following
-happens:
-
- - you have read the entire HTTP response from the server.  Since this is
-   HTTP/1.0, this is when the call to `read()` (or `recv()`) returns 0,
-   indicating that the server has closed the connection.  If this is the case:
-   - clean up server socket.
-   - register the client socket with the epoll instance for writing.
-   - change state to `SEND_RESPONSE`.
- - `read()` (or `recv()`) returns a value less than 0.
-   - If `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is no
-     more data ready to be read; you will continue reading from the socket when
-     you are notified by epoll that there is more data to be read.
-   - If `errno` is anything else, this is an error.  You can print out the
-     error, cancel your client request, and deregister your socket at this
-     point.
-
-
-### `SEND_RESPONSE`
-
-You reach this state only after you have received the entire response from the
-Web server (i.e., in the `READ_RESPONSE` state).
-
-In this state, loop to write to the client socket until one of the following
-happens:
-
- - you have written the entire HTTP response to the client socket.  If this is
-   the case:
-   - close your client socket.  You are done!
- - `write()` (or `send()`) returns a value less than 0.
-   - If and `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is
-     no buffer space available for writing to the socket; you will continue
-     writing to the socket when you are notified by epoll that there is more
-     buffer space available for writing.
-   - If `errno` is anything else, this is an error.  You can print out the
-     error, cancel your client request, and deregister your socket at this
-     point.
-
-
-## Client Request Data
-
-You will need to keep track of the data associated with each request.  The
-reason is that, just like when using blocking sockets, you won't always be able
-to receive or send all your data with a single call to `read()` or `write()`.
-With blocking sockets in a multi-threaded server, the solution was to use a
-loop that received or sent until you had everything, before you moved on to
-anything else.  Because the sockets were configured as blocking, the kernel
-would context switch out the thread and put it into a sleep state until there
-was I/O.
-
-However, with I/O multiplexing and non-blocking I/O, you can't loop until you
-receive (or send) everything; you have to stop when you get an value less than
-0 and move on to handling the other ready events, after which you will return
-to the `epoll_wait()` loop to see if it is ready for more I/O.  When a return
-value to `read()` or `write()` is less than 0 and `errno` is `EAGAIN` or
-`EWOULDBLOCK`, it is a an indicator that you are done for the moment--but you
-need to know where you should start next time it's your turn (see man pages for
-`accept()` and `read()`, and search for "blocking").  For example, you should
-associate the following with each client request.
-
- - the socket corresponding to the requesting client
- - the socket corresponding to the connection to the Web server
- - the current state of the request (see [Client Request States](#client-request-states)).
- - the buffer(s) to read into and write from
- - the total number of bytes read from the client
- - the total number of bytes to write to the server
- - the total number of bytes written to the server
- - the total number of bytes read from the server
- - the total number of bytes written to the client
-
-You might like to define a `struct request_info` (for example) that contains
-each of these members.
 
 
 # Preparation
@@ -245,21 +81,6 @@ assignment:
  - `getaddrinfo()`
 
 
-## epoll Echo Server Example
-
-The `echoserver-epoll` directory contains a working version of a echo server
-using epoll, complete with non-blocking sockets and edge-triggered monitoring.
-To compile it, run the following from the `echoserver-epoll` directory:
-
-```bash
-$ gcc -o echoservere echoservere.c
-```
-
-You can use the code as a guide for building your HTTP proxy server with epoll.
-It runs the same way as the echo server implementations from the
-[concurrency homework assignment](../hw-concurrency).
-
-
 # Instructions
 
 ## Part 1 - HTTP Request Parsing
@@ -273,7 +94,9 @@ if you haven't already.
 
 As you implement this section, you might find it helpful to refer to the TCP
 code from the
-[sockets homework assignment](../hw-sockets).
+[sockets homework assignment](../hw-sockets)
+and the
+[epoll Echo Server Example](#epoll-echo-server-example).
 
 
 ### Handling a New HTTP Client
@@ -295,8 +118,8 @@ Write functions for each of the following:
      While this might seem like a bad idea, during development of your proxy
      server, it will allow you to immediately restart your proxy server after
      failure, rather than having to wait for it to time out.
-   - Configure the socket to use *non-blocking I/O* (see the man page for
-     `fcntl()` for how to do this).
+   - Configure the socket to use *non-blocking I/O* (see the
+     [epoll Echo Server](echoserver-epoll/echoservere.c)).
    - `bind()` it to a port passed as the first argument from the
      command line, and configure it for accepting new clients with `listen()`.
    - Return the file descriptor associated with the server socket.
@@ -330,9 +153,6 @@ Now add the following to `main()`:
    *reading* and for edge-triggered monitoring (i.e., `EPOLLIN | EPOLLET`).
  - Create a `while(1)` loop that does the following:
    - Calls `epoll_wait()` loop with a timeout of 1 second.
-   - If the result was a timeout (i.e., return value from `epoll_wait()` is 0),
-     check if a global flag has been set by a signal handler and, if so, break
-     out of the loop; otherwise, continue.
    - If the result was an error (i.e., return value from `epoll_wait()` is less
      than 0), then handle the error appropriately (see the man page for
      `epoll_wait()` for more).
@@ -485,6 +305,188 @@ At this point you should be able to pass:
    ```bash
    $ ./driver.py -b 20 -c 75 epoll
    ```
+
+
+# Additional Resources
+
+## Non-Blocking I/O
+
+All sockets that your proxy will use should be set up for non-blocking I/O.
+This includes the listen socket, the sockets associated with communications
+between client and proxy, and the sockets associated with communications
+between proxy and server.
+
+Additionally, all sockets must be registered with the epoll instance, for
+reading or writing, using edge-triggered monitoring.
+
+That being said, for simplicity, you _should_ wait to set the proxy-to-server
+socket as non-blocking _after_ you call `connect()`, rather than before.  While
+that will mean that your server not fully non-blocking, it will allow you to
+focus on the more important parts of I/O multiplexing.  This is permissible.
+
+If you choose to ignore the previous paragraph and set the socket as
+non-blocking before calling `connect()`, you can execute `connect()`
+immediately, but you cannot initiate the `write()` call until `epoll_wait()`
+indicates that this socket is ready for writing. Because the socket is
+non-blocking, `connect()` will return before the connection is actually
+established.  In this case, the return value is -1 and `errno` is set to
+`EINPROGRESS` (see the `connect()` man page).  This also means that when
+iterating through the results of `getaddrinfo()` when a socket is non-blocking,
+the return value of `connect()` is not a useful check for determining whether a
+given address is reachable.  This works
+
+
+## Client Request States
+
+A server that uses I/O multiplexing will handle multiple clients concurrently
+using only a single thread.  That means that it only acts on a given client
+when there is I/O associated with that client.  But because handling a proxy
+client involves various tasks (e.g., receive request from client, send request
+to server, etc.), it is helpful to think about the problem in terms of
+"states" and events that trigger transitions between these states.  The
+following is an example of a set of client request states, each associated with
+different I/O operations related to proxy server operation:
+
+
+### `READ_REQUEST`
+
+This is the start state for every new client request.  You should initialize
+every new client request to be in this state.
+
+In this state, read from the client socket in a loop until one of the following
+happens:
+
+ - you have read the entire HTTP request from the client.  If this is the case:
+   - parse the client request and create the request that you will send to the
+     server.
+   - create a new socket and connect to the HTTP server.
+   - configure the new socket as non-blocking.
+   - register the socket with the epoll instance for writing.
+   - change state to `SEND_REQUEST`.
+ - `read()` (or `recv()`) returns a value less than 0.
+   - If `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is no
+     more data ready to be read; you will continue reading from the socket when
+     you are notified by epoll that there is more data to be read.
+   - If `errno` is anything else, this is an error.  You can print out the
+     error, cancel your client request, and deregister your socket at this
+     point.
+
+
+### `SEND_REQUEST`
+
+You reach this state only after the entire request has been received from the
+client and the connection to the server has been initiated (i.e., in the
+`READ_REQUEST` state).
+
+In this state, loop to write the request to the server socket until one of the
+following happens:
+
+ - you have written the entire HTTP request to the server socket.  If this is
+   the case:
+   - register the socket with the epoll instance for reading.
+   - change state to `READ_RESPONSE`.
+ - `write()` (or `send()`) returns a value less than 0.
+   - If and `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is
+     no buffer space available for writing to the socket; you will continue
+     writing to the socket when you are notified by epoll that there is more
+     buffer space available for writing.
+   - If `errno` is anything else, this is an error.  You can print out the
+     error, cancel your client request, and deregister your socket at this
+     point.
+
+
+### `READ_RESPONSE`
+
+You reach this state only after you have sent the entire HTTP request (i.e., in
+the `SEND_REQUEST` state) to the Web server.
+
+In this state, loop to read from the server socket until one of the following
+happens:
+
+ - you have read the entire HTTP response from the server.  Since this is
+   HTTP/1.0, this is when the call to `read()` (or `recv()`) returns 0,
+   indicating that the server has closed the connection.  If this is the case:
+   - close the socket that you are
+   - close up server socket.
+   - register the client socket with the epoll instance for writing.
+   - change state to `SEND_RESPONSE`.
+ - `read()` (or `recv()`) returns a value less than 0.
+   - If `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is no
+     more data ready to be read; you will continue reading from the socket when
+     you are notified by epoll that there is more data to be read.
+   - If `errno` is anything else, this is an error.  You can print out the
+     error, cancel your client request, and deregister your socket at this
+     point.
+
+
+### `SEND_RESPONSE`
+
+You reach this state only after you have received the entire response from the
+Web server (i.e., in the `READ_RESPONSE` state).
+
+In this state, loop to write to the client socket until one of the following
+happens:
+
+ - you have written the entire HTTP response to the client socket.  If this is
+   the case:
+   - close your client socket.  You are done!
+ - `write()` (or `send()`) returns a value less than 0.
+   - If and `errno` is `EAGAIN` or `EWOULDBLOCK`, it just means that there is
+     no buffer space available for writing to the socket; you will continue
+     writing to the socket when you are notified by epoll that there is more
+     buffer space available for writing.
+   - If `errno` is anything else, this is an error.  You can print out the
+     error, cancel your client request, and deregister your socket at this
+     point.
+
+
+## Client Request Data
+
+You will need to keep track of the data associated with each request.  The
+reason is that, just like when using blocking sockets, you won't always be able
+to receive or send all your data with a single call to `read()` or `write()`.
+With blocking sockets in a multi-threaded server, the solution was to use a
+loop that received or sent until you had everything, before you moved on to
+anything else.  Because the sockets were configured as blocking, the kernel
+would context switch out the thread and put it into a sleep state until there
+was I/O.
+
+However, with I/O multiplexing and non-blocking I/O, you can't loop until you
+receive (or send) everything; you have to stop when you get an value less than
+0 and move on to handling the other ready events, after which you will return
+to the `epoll_wait()` loop to see if it is ready for more I/O.  When a return
+value to `read()` or `write()` is less than 0 and `errno` is `EAGAIN` or
+`EWOULDBLOCK`, it is a an indicator that you are done for the moment--but you
+need to know where you should start next time it's your turn (see man pages for
+`accept()` and `read()`, and search for "blocking").  For example, you should
+associate the following with each client request.
+
+ - the socket corresponding to the requesting client
+ - the socket corresponding to the connection to the Web server
+ - the current state of the request (see [Client Request States](#client-request-states)).
+ - the buffer(s) to read into and write from
+ - the total number of bytes read from the client
+ - the total number of bytes to write to the server
+ - the total number of bytes written to the server
+ - the total number of bytes read from the server
+ - the total number of bytes written to the client
+
+You might like to define a `struct request_info` (for example) that contains
+each of these members.
+
+## epoll Echo Server Example
+
+The `echoserver-epoll` directory contains a working version of a echo server
+using epoll, complete with non-blocking sockets and edge-triggered monitoring.
+To compile it, run the following from the `echoserver-epoll` directory:
+
+```bash
+$ gcc -o echoservere echoservere.c
+```
+
+You can use the code as a guide for building your HTTP proxy server with epoll.
+It runs the same way as the echo server implementations from the
+[concurrency homework assignment](../hw-concurrency).
 
 
 # Testing
