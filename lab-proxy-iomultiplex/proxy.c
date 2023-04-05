@@ -21,10 +21,30 @@
 #define MAXLINE 8192
 #define SO_REUSEPORT 15
 
+/* Client request states */
+#define READ_REQUEST 0
+#define SEND_REQUEST 1
+#define READ_RESPONSE 2
+#define SEND_RESPONSE 3
+
 struct client_info {
 	int fd;
+	int sfd;
 	int total_length;
 	char desc[1024];
+	int state;	 		   /* Current state of the request */
+	int in_req_offset;	   /* Last location written to inbound request buffer */
+	int out_req_offset;	   /* Last location written to outbound request buffer */ 
+	int in_res_offset;	   /* Last location written to inbound response buffer */
+	int out_res_offset;    /* Last location written to outbound response buffer */
+	char *in_buf_ptr;	   /* Pointer to inbound request buffer */
+	char *out_buf_ptr;	   /* Pointer to outbound request buffer */
+	char *res_ptr;         /* Pointer to response buffer */
+    int n_read_from_c;     /* Total number of bytes read from the client */
+    int n_to_write_to_s;   /* Total number of bytes to write to the server */
+	int n_written_to_s;    /* Total number of bytes written to the server */
+	int n_read_from_s;     /* Total number of bytes read from the server */
+    int n_written_to_c;    /* Total number of bytes written to the client */
 };
 
 struct conn_info {
@@ -69,11 +89,11 @@ struct client_info *active_client;
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
 int debug = 1;
 
-int all_headers_received(char *);
 int parse_request(char *, char *, char *, char *, char *, char *);
 int open_sfd();
 void handle_new_clients(int sfd, int _efd);
-void handle_client(); 
+void handle_client(struct client_info *active_client, int _efd); 
+int all_headers_received(char *);
 void test_parser();
 void print_bytes(unsigned char *, int);
 
@@ -101,8 +121,6 @@ int main(int argc, char *argv[])
 	listener->fd = sfd;
 	// sprintf(listener->desc, "Listen file descriptor (accepts new clients)");
 
-	if (debug) printf("before epoll_ctl\n");
-
 	// Register your listening proxy server socket with the epoll instance that you created, 
 	// for reading and for edge-triggered monitoring
 	event.data.ptr = listener;
@@ -112,24 +130,17 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	if (debug) printf("after epoll_ctl\n");
-
-	int j = 0;
 	while (1) {
-		j++;
-		// if (debug) printf("%d: before epoll_wait, efd: %d\n",j, efd);
 		int n;
 		if ((n = epoll_wait(efd, events, MAXEVENTS, 1000)) < 0) {
 			perror("epoll_wait");
 			exit(1);
 		}
-		// if (debug) printf("after epoll_wait, n = %d\n", n);
 		
 		// Loop through all events and handle each appropriately
 		for (i = 0; i < n; i++) {
 			
-			// grab the data structure from the event, and cast it
-			// (appropriately) to a struct client_info *.
+			// Grab the data structure from the event, and cast it (appropriately) to a struct client_info *.
 			active_client = (struct client_info *)(events[i].data.ptr);
 
 			if (debug) printf("New event for fd %d (%s)\n", active_client->fd, active_client->desc);
@@ -143,15 +154,13 @@ int main(int argc, char *argv[])
 				free(active_client);
 				continue;
 			}
-			// if (debug) printf("sfd: %d\n",sfd);
 
+			int _efd = efd;
 			if (sfd == active_client->fd) {
-				// printf("efd: %d\n",efd);
-				int _efd = efd;
 				handle_new_clients(active_client->fd, _efd);
 			}
 			else {
-				
+				handle_client(active_client, _efd);
 			}
 		}
 	}
@@ -246,11 +255,27 @@ void handle_new_clients (int fd, int _efd) {
 		new_client = (struct client_info *)malloc(sizeof(struct client_info));
 		new_client->fd = connfd;
 		new_client->total_length = 0;
+		new_client->in_req_offset = 0;
+		new_client->out_req_offset = 0;
+		new_client->in_res_offset = 0;
+		new_client->out_res_offset = 0;
+
+		// Set up client's request buffers
+		char request[BIG_BUFF_SIZE], fwd[BIG_BUFF_SIZE];
+		memset(&request[0], 0, BIG_BUFF_SIZE);
+		memset(&fwd[0], 0, BIG_BUFF_SIZE);
+		new_client->in_buf_ptr = &request[0];
+		new_client->out_buf_ptr = &fwd[0];
+
+		// Set up client's response buffer
+		char response[BIG_BUFF_SIZE];
+		memset(&response[0], 0, BIG_BUFF_SIZE);
+		new_client->res_ptr = &response[0];
+
+		new_client->state = READ_REQUEST;
 		sprintf(new_client->desc, "Client with file descriptor %d", connfd);
 
-		// register the client file descriptor
-		// for incoming events using
-		// edge-triggered monitoring
+		// Register the client file descriptor for incoming events using edge-triggered monitoring
 		event.data.ptr = new_client;
 		event.events = EPOLLIN | EPOLLET;
 		
@@ -258,6 +283,331 @@ void handle_new_clients (int fd, int _efd) {
 			fprintf(stderr, "error adding event\n");
 			exit(1);
 		}
+
+		printf("New connfd: %d\n", connfd);
+	}
+}
+
+void handle_client(struct client_info *client, int efd) {
+	if (client == NULL) return;
+
+	printf("Entering handle_client\nFD: %d\nState: %d\n",client->fd, client->state);
+
+	if (client->state == READ_REQUEST) {
+		// START READ_REQUEST
+		printf("Entering READ_REQUEST\n");
+		
+		int rtotal_read = 0;
+		int rbytes_read = 0;
+		int debug = 1;
+		do {
+			rbytes_read = recv(client->fd, client->in_buf_ptr + client->in_req_offset + rtotal_read, 512, 0);
+			printf("read loop -> rbytes_read=%d\n",rbytes_read);
+			if (rbytes_read == 0){
+				break;
+			}
+			else if (rbytes_read < 0) {
+				if (errno == EAGAIN || errno == EWOULDBLOCK) {
+					// set offset
+					client->in_req_offset += rtotal_read;
+					return;
+				}
+				else {
+					perror("recv");
+					close(client->fd);
+					free(client);
+					return;
+				}
+			}
+			rtotal_read += rbytes_read;
+		} while(!all_headers_received(client->in_buf_ptr) && rtotal_read < BIG_BUFF_SIZE);
+		client->in_buf_ptr[client->in_req_offset + rtotal_read] = 00;
+
+		// Test parsing
+		if(debug) printf("Request Received: \n%s\n",client->in_buf_ptr);
+		char method[16], hostname[64], port[8], path[64], headers[1024];
+		if(parse_request(client->in_buf_ptr, method, hostname, port, path, headers)) {
+			if(debug){
+				printf("Parsed: \n");
+				printf("METHOD: %s\n", method);
+				printf("HOSTNAME: %s\n", hostname);
+				printf("PORT: %s\n", port);
+				printf("PATH: %s\n", path);
+				printf("HEADERS: %s\n", headers);
+			}
+		} else {
+			if(debug) printf("REQUEST INCOMPLETE\n");
+		}
+		/// Copy client's request to send to server
+		// Add method to new request
+		strcat(client->out_buf_ptr, method);
+		strcat(client->out_buf_ptr, " ");
+
+		// Add path to new request
+		strcat(client->out_buf_ptr, path);
+		strcat(client->out_buf_ptr, " ");
+
+		// Add HTTP v1.0
+		strcat(client->out_buf_ptr, "HTTP/1.0\r\n");
+
+		// Add Host header
+		char host_header[100] = "Host: ";
+		strcat(host_header, hostname);
+		if(strcmp(port, "80") != 0) {
+			strcat(host_header, ":");
+			strcat(host_header, port);
+		}
+		strcat(host_header, "\r\n");
+		strcat(client->out_buf_ptr, host_header);
+		// headers_len += strlen(host_header);
+
+		// Add User-Agent header
+		strcat(client->out_buf_ptr, user_agent_hdr);
+		strcat(client->out_buf_ptr, "\r\n");
+		// headers_len += strlen(user_agent_hdr) + 2;
+
+		// Add Connection header
+		strcat(client->out_buf_ptr, "Connection: close\r\n");
+		// headers_len += 19;
+
+		// Add Proxy-Connection header
+		strcat(client->out_buf_ptr, "Proxy-Connection: close\r\n");
+		// headers_len += 25;
+
+		// End headers
+		strcat(client->out_buf_ptr, "\r\n");
+
+		if(debug) printf("New Request: \n%s\n", client->out_buf_ptr);
+
+		/// Create socket for communicating with server
+		int server_sfd2;
+		struct addrinfo hints2, *result2, *rp2;
+		struct sockaddr_in remote_addr_in2, local_addr_in2;
+		socklen_t addr_len2;
+		struct sockaddr *remote_addr2, *local_addr2;
+		char local_addr_str[INET6_ADDRSTRLEN];
+		char remote_addr_str[INET6_ADDRSTRLEN];
+
+		memset(&hints2, 0, sizeof(struct addrinfo));
+		hints2.ai_family = af;    /* Allow IPv4, IPv6, or both, depending on
+						what was specified on the command line. */
+		hints2.ai_socktype = SOCK_STREAM; /* Datagram socket */
+		hints2.ai_flags = 0;
+		hints2.ai_protocol = 0;  /* Any protocol */
+
+		s = getaddrinfo(hostname, port, &hints2, &result2);
+		if(s != 0) {
+			perror("server getaddrinfo");
+			exit(EXIT_FAILURE);
+		}
+
+		for (rp2 = result2; rp2 != NULL; rp = rp2->ai_next) {
+			server_sfd2 = socket(rp2->ai_family, rp2->ai_socktype, rp2->ai_protocol);
+			if(server_sfd2 == -1) {
+				printf("bad fd\n");
+				continue;
+			}
+
+			addr_fam = rp2->ai_family;
+			addr_len2 = rp2->ai_addrlen;
+
+			remote_addr_in2 = *(struct sockaddr_in *)rp2->ai_addr;
+			inet_ntop(addr_fam, &remote_addr_in2.sin_addr, remote_addr_str, addr_len2);
+			// remote_port2 = ntohs(remote_addr_in2.sin_port);
+			remote_addr2 = (struct sockaddr *)&remote_addr_in2;
+			local_addr2 = (struct sockaddr *)&local_addr_in2;
+
+			// fprintf(stderr, "Connecting to %s:%d (family: %d, len: %d)\n", remote_addr_str, remote_port, addr_fam, addr_len);
+
+			/* if connect is successful, then break out of the loop; we
+			* will use the current address */
+			if(connect(server_sfd2, remote_addr2, addr_len2) != -1)
+				break;  /* Success */
+
+			close(server_sfd2);
+		}
+
+		if(rp2 == NULL) {   /* No address succeeded */
+			fprintf(stderr,"Could not connect to server\n");
+			exit(EXIT_FAILURE);
+		}
+
+		freeaddrinfo(result2);   /* No longer needed */
+
+		s = getsockname(server_sfd2, local_addr2, &addr_len2);
+
+		inet_ntop(addr_fam, &local_addr_in2.sin_addr, local_addr_str, addr_len2);
+
+		// Set listening file descriptor non-blocking
+		if (fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK) < 0) {
+			fprintf(stderr, "error setting socket option\n");
+			exit(1);
+		}
+
+
+		// Record server file descriptor, set client's state to "ready request to send to server"
+		client->sfd = server_sfd2;
+		client->state = SEND_REQUEST;
+
+		// Deregister client file descriptor from epoll reading
+		// if (epoll_ctl(efd, EPOLL_CTL_DEL, client->sfd, &event)< 0) {
+		// 	perror("remove client from epoll reading");
+		// 	return;
+		// }
+		// Register server file descriptor for writing
+		event.data.ptr = client;
+		event.events = EPOLLOUT | EPOLLET;
+		if (epoll_ctl(efd, EPOLL_CTL_ADD, client->sfd, &event) < 0) {
+			perror("add event for writing");
+			return;
+		}
+
+		// END READ_REQUEST
+	}
+	
+	else if (client->state == SEND_REQUEST) {
+		// START SEND_REQUEST
+		printf("Entering SEND_REQUEST\n");
+
+		// Send new http request to server
+		int total_sent = 0;
+		int bytes_sent = 0;
+		do {
+			if(strlen(client->out_buf_ptr) - total_sent < 512) {
+				bytes_sent = write(client->sfd, client->out_buf_ptr + total_sent, strlen(client->out_buf_ptr) - total_sent);
+			}
+			else {
+				bytes_sent = write(client->sfd, client->out_buf_ptr + client->out_req_offset + total_sent, 512);
+			}
+			if(bytes_sent < 0) {
+				if (errno == EAGAIN || errno == EWOULDBLOCK) {
+					client->out_req_offset += total_sent;
+					return;
+				}
+				else {
+					perror("send request");
+					close(client->fd);
+					close(client->sfd);
+					free(client);
+					return;
+				}
+			}
+			total_sent += bytes_sent;
+		} while(bytes_sent == 512 && (client->out_req_offset + total_sent) < strlen(client->out_buf_ptr));
+
+		// Deregister server file descriptor from epoll writing
+		if (epoll_ctl(efd, EPOLL_CTL_DEL, client->sfd, &event)< 0) {
+			perror("remove client from epoll writing");
+			return;
+		}
+		// Register server socket for epoll reading
+		event.data.ptr = client;
+		event.events = EPOLLIN | EPOLLET;
+		if (epoll_ctl(efd, EPOLL_CTL_ADD, client->sfd, &event) < 0) {
+			fprintf(stderr, "error adding event\n");
+			exit(EXIT_FAILURE);
+		}
+
+		// Set client state to "read server response"
+		client->state = READ_RESPONSE;
+
+		// END SEND_REQUEST
+	}
+	
+	else if (client->state == READ_RESPONSE) {
+		// START READ_RESPONSE
+
+		// Read response from server
+		int restotal_read = 0;
+		int resbytes_read = 0;
+		do {
+			resbytes_read = recv(client->sfd, client->res_ptr + client->in_res_offset + restotal_read, 512, 0);
+			if (resbytes_read == 0) {
+				// Increment inbound response offset, close server file descriptor
+				client->in_res_offset += restotal_read;
+				close(client->sfd);
+				printf("Response:\n%s\n",client->res_ptr);
+				// Deregister client file descriptor from epoll reading
+				if (epoll_ctl(efd, EPOLL_CTL_DEL, client->fd, &event)< 0) {
+					perror("remove client from epoll reading");
+					return;
+				}
+				// Register client file descriptor for writing
+				event.data.ptr = client;
+				event.events = EPOLLOUT | EPOLLET;
+				if (epoll_ctl(efd, EPOLL_CTL_ADD, client->fd, &event) < 0) {
+					perror("add event for writing");
+					return;
+				}
+				// Update client's state to "send response to client"
+				client->state = SEND_RESPONSE;
+				//handle_client(client, efd);
+				return;
+			}
+			else if (resbytes_read < 0) {
+				if (errno == EAGAIN || errno == EWOULDBLOCK) {
+					client->in_res_offset += restotal_read;
+					return;
+				}
+				else {
+					perror("read response");
+					close(client->fd);
+					close(client->sfd);
+					free(client);
+					return;
+				}
+			}
+			restotal_read += resbytes_read;
+		} while(resbytes_read > 0 && (client->in_res_offset + restotal_read) < BIG_BUFF_SIZE);
+
+		printf("Bytes read: %d\nResponse from server:\n%s\n", client->in_res_offset + restotal_read, client->res_ptr);
+		
+		// END READ_RESPONSE
+	}
+	
+	else if (client->state == SEND_RESPONSE) {
+		// START SEND_RESPONSE
+
+		int rtotal_sent = 0;
+		int rbytes_sent = 0;
+
+		// Forward server's response to client
+		do {
+			if(strlen(client->res_ptr) - rtotal_sent < 512) {
+				rbytes_sent = write(client->fd, client->res_ptr + client->out_res_offset + rtotal_sent, strlen(client->res_ptr) - rtotal_sent);
+			}
+			else {
+				rbytes_sent = write(client->fd, client->res_ptr + client->out_req_offset + rtotal_sent, 512);
+			}
+
+			if (rbytes_sent < 0) {
+				if (errno == EAGAIN || errno == EWOULDBLOCK) {
+					client->out_res_offset += rtotal_sent;
+					return;
+				}
+				else {
+					perror("send response");
+					close(client->fd);
+					free(client);
+					return;
+				}
+			}
+			rtotal_sent += rbytes_sent;
+		} while (rbytes_sent == 512 && (client->out_res_offset + rtotal_sent) < strlen(client->res_ptr));
+
+		// Close client connection
+		close(client->fd);
+		free(client);
+
+		sleep(2);
+		
+		// END SEND_RESPONSE
+	}
+	
+	else {
+		// No state set for request
+		fprintf(stderr, "Can't Handle Client: No state set for request\n");
+		return;
 	}
 }
 
@@ -265,186 +615,9 @@ int all_headers_received(char *request) {
 	return !strstr(request, "\r\n\r\n") ? 0 : 1;
 }
 
-void handle_client(int client_sfd) {
-	char request[BIG_BUFF_SIZE], fwd[BIG_BUFF_SIZE];
-	memset(&request[0], 0, BIG_BUFF_SIZE);
-	memset(&fwd[0], 0, BIG_BUFF_SIZE);
-	int rtotal_read = 0;
-	int rbytes_read = 0;
-	int debug = 1;
-	do {
-		rbytes_read = recv(client_sfd, request + rtotal_read, 512, 0);
-		rtotal_read += rbytes_read;
-		if(rbytes_read <= 0){
-			break;
-		}
-	} while(!all_headers_received(request) && rbytes_read > 0 && rtotal_read <= BIG_BUFF_SIZE);
-	request[rtotal_read] = 00;
-
-	// Test parsing
-	if(debug) printf("Request Received: \n%s\n",request);
-	char method[16], hostname[64], port[8], path[64], headers[1024];
-	if(parse_request(request, method, hostname, port, path, headers)) {
-		if(debug){
-			printf("Parsed: \n");
-			printf("METHOD: %s\n", method);
-			printf("HOSTNAME: %s\n", hostname);
-			printf("PORT: %s\n", port);
-			printf("PATH: %s\n", path);
-			printf("HEADERS: %s\n", headers);
-		}
-	} else {
-		if(debug) printf("REQUEST INCOMPLETE\n");
-	}
-	/// Copy client's request to send to server
-	// Add method to new request
-	strcat(fwd, method);
-	strcat(fwd, " ");
-
-	// Add path to new request
-	strcat(fwd, path);
-	strcat(fwd, " ");
-
-	// Add HTTP v1.0
-	strcat(fwd, "HTTP/1.0\r\n");
-
-	// int headers_len = 0;
-
-	// Add Host header
-	char host_header[100] = "Host: ";
-	strcat(host_header, hostname);
-	if(strcmp(port, "80") != 0) {
-		strcat(host_header, ":");
-		strcat(host_header, port);
-	}
-	strcat(host_header, "\r\n");
-	strcat(fwd, host_header);
-	// headers_len += strlen(host_header);
-
-	// Add User-Agent header
-	strcat(fwd, user_agent_hdr);
-	strcat(fwd, "\r\n");
-	// headers_len += strlen(user_agent_hdr) + 2;
-
-	// Add Connection header
-	strcat(fwd, "Connection: close\r\n");
-	// headers_len += 19;
-
-	// Add Proxy-Connection header
-	strcat(fwd, "Proxy-Connection: close\r\n");
-	// headers_len += 25;
-
-	// End headers
-	strcat(fwd, "\r\n");
-
-	if(debug) printf("New Request: \n%s\n", fwd);
-
-	/// Create socket for communicating with server
-	int server_sfd2;
-	struct addrinfo hints2, *result2, *rp2;
-	struct sockaddr_in remote_addr_in2, local_addr_in2;
-	socklen_t addr_len2;
-	struct sockaddr *remote_addr2, *local_addr2;
-	char local_addr_str[INET6_ADDRSTRLEN];
-	char remote_addr_str[INET6_ADDRSTRLEN];
-
-	memset(&hints2, 0, sizeof(struct addrinfo));
-	hints2.ai_family = af;    /* Allow IPv4, IPv6, or both, depending on
-				    what was specified on the command line. */
-	hints2.ai_socktype = SOCK_STREAM; /* Datagram socket */
-	hints2.ai_flags = 0;
-	hints2.ai_protocol = 0;  /* Any protocol */
-
-	s = getaddrinfo(hostname, port, &hints2, &result2);
-	if(s != 0) {
-		perror("server getaddrinfo");
-		exit(EXIT_FAILURE);
-	}
-
-	for (rp2 = result2; rp2 != NULL; rp = rp2->ai_next) {
-		server_sfd2 = socket(rp2->ai_family, rp2->ai_socktype, rp2->ai_protocol);
-		if(server_sfd2 == -1) {
-			printf("bad fd\n");
-			continue;
-		}
-
-		addr_fam = rp2->ai_family;
-		addr_len2 = rp2->ai_addrlen;
-
-		remote_addr_in2 = *(struct sockaddr_in *)rp2->ai_addr;
-		inet_ntop(addr_fam, &remote_addr_in2.sin_addr, remote_addr_str, addr_len2);
-		// remote_port2 = ntohs(remote_addr_in2.sin_port);
-		remote_addr2 = (struct sockaddr *)&remote_addr_in2;
-		local_addr2 = (struct sockaddr *)&local_addr_in2;
-
-		// fprintf(stderr, "Connecting to %s:%d (family: %d, len: %d)\n", remote_addr_str, remote_port, addr_fam, addr_len);
-
-		/* if connect is successful, then break out of the loop; we
-		 * will use the current address */
-		if(connect(server_sfd2, remote_addr2, addr_len2) != -1)
-			break;  /* Success */
-
-		close(server_sfd2);
-	}
-
-	if(rp2 == NULL) {   /* No address succeeded */
-		fprintf(stderr,"Could not connect to server\n");
-		exit(EXIT_FAILURE);
-	}
-
-	freeaddrinfo(result2);   /* No longer needed */
-
-	s = getsockname(server_sfd2, local_addr2, &addr_len2);
-
-	inet_ntop(addr_fam, &local_addr_in2.sin_addr, local_addr_str, addr_len2);
-
-	// Send new http request to server
-	int total_sent = 0;
-	int bytes_sent = 0;
-	do {
-		if(strlen(fwd) - total_sent < 512) {
-			bytes_sent = write(server_sfd2, fwd + total_sent, strlen(fwd) - total_sent);
-		}
-		else {
-			bytes_sent = write(server_sfd2, fwd + total_sent, 512);
-		}
-		if(bytes_sent < 0) {
-			break;
-		}
-		total_sent += bytes_sent;
-	} while(bytes_sent == 512 && total_sent <= strlen(fwd));
-
-	// Read response from server
-	char response[BIG_BUFF_SIZE];
-	memset(&response[0], 0, BIG_BUFF_SIZE);
-	int restotal_read = 0;
-	int resbytes_read = 0;
-	do {
-		resbytes_read = recv(server_sfd2, response + restotal_read, 512, 0);
-		if(resbytes_read < 0){
-			perror("reading from server");
-			break;
-		} 
-		restotal_read += resbytes_read;
-	} while(resbytes_read > 0 && restotal_read <= BIG_BUFF_SIZE);
-
-	close(server_sfd2);
-
-	printf("Bytes read: %d\nResponse from server:\n%s\n", restotal_read, response);
-
-	// Forward server's response to client
-	if(write(client_sfd, response, restotal_read) < 0) {
-		perror("returning response to client");
-	}
-
-	sleep(2);
-	// Close client connection
-	close(client_sfd);
-
-}
-
 int parse_request(char *request, char *method,
 		char *hostname, char *port, char *path, char *headers) {
+
 	// Ensure all buffers are empty
 	int m_l = sizeof(method);
 	memset(&method[0], 0, m_l);
@@ -482,7 +655,6 @@ int parse_request(char *request, char *method,
 		hostname[(sec_colon - 1) - (slashes + 1)] = 00;
 		strncpy(port, sec_colon + 1, third_fs - (sec_colon + 1));
 		port[third_fs - (sec_colon + 1)] = 00;
-
 	}
 
 	// Get path from end of URL
