@@ -14,7 +14,7 @@
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
-#define BIG_BUFF_SIZE 50000
+#define BIG_BUFF_SIZE 102400
 #define MAXEVENTS 64
 #define MAX_LINE 2048
 #define BUF_SIZE 500
@@ -28,10 +28,8 @@
 #define SEND_RESPONSE 3
 
 struct client_info {
-	int fd;
-	int sfd;
-	int total_length;
-	char desc[1024];
+	int fd;				   /* Client file descriptor */
+	int sfd;			   /* Server file descriptor */
 	int state;	 		   /* Current state of the request */
 	int in_req_offset;	   /* Last location written to inbound request buffer */
 	int out_req_offset;	   /* Last location written to outbound request buffer */ 
@@ -41,22 +39,6 @@ struct client_info {
 	char *out_buf_ptr;	   /* Pointer to outbound request buffer */
 	char *res_ptr;         /* Pointer to response buffer */
     int n_read_from_c;     /* Total number of bytes read from the client */
-    int n_to_write_to_s;   /* Total number of bytes to write to the server */
-	int n_written_to_s;    /* Total number of bytes written to the server */
-	int n_read_from_s;     /* Total number of bytes read from the server */
-    int n_written_to_c;    /* Total number of bytes written to the client */
-};
-
-struct conn_info {
-    char *buf;             /* Buffer array for reading and writing */         
-    int cfd;               /* Client socket file descriptor */
-    int sfd;               /* Server socket file descriptor */
-    int state;	 		   /* Current state of the request */
-    int n_read_from_c;     /* Total number of bytes read from the client */
-    int n_to_write_to_s;   /* Total number of bytes to write to the server */
-	int n_written_to_s;    /* Total number of bytes written to the server */
-	int n_read_from_s;     /* Total number of bytes read from the server */
-    int n_written_to_c;    /* Total number of bytes written to the client */
 };
 
 // Socket data structures
@@ -87,7 +69,7 @@ struct client_info *listener;
 struct client_info *active_client;
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
-int debug = 1;
+int debug = 0;
 
 int parse_request(char *, char *, char *, char *, char *, char *);
 int open_sfd();
@@ -119,7 +101,6 @@ int main(int argc, char *argv[])
 	// info for the listening socket
 	listener = malloc(sizeof(struct client_info));
 	listener->fd = sfd;
-	// sprintf(listener->desc, "Listen file descriptor (accepts new clients)");
 
 	// Register your listening proxy server socket with the epoll instance that you created, 
 	// for reading and for edge-triggered monitoring
@@ -136,14 +117,14 @@ int main(int argc, char *argv[])
 			perror("epoll_wait");
 			exit(1);
 		}
-		
+
 		// Loop through all events and handle each appropriately
 		for (i = 0; i < n; i++) {
-			
+
 			// Grab the data structure from the event, and cast it (appropriately) to a struct client_info *.
 			active_client = (struct client_info *)(events[i].data.ptr);
 
-			if (debug) printf("New event for fd %d (%s)\n", active_client->fd, active_client->desc);
+			if (debug) printf("New event for fd %d\n", active_client->fd);
 
 			if ((events[i].events & EPOLLERR) ||
 					(events[i].events & EPOLLHUP) ||
@@ -249,34 +230,32 @@ void handle_new_clients (int fd, int _efd) {
 			exit(1);
 		}
 
-		// allocate memory for a new struct
-		// client_info, and populate it with
-		// info for the new client
-		new_client = (struct client_info *)malloc(sizeof(struct client_info));
-		new_client->fd = connfd;
-		new_client->total_length = 0;
-		new_client->in_req_offset = 0;
-		new_client->out_req_offset = 0;
-		new_client->in_res_offset = 0;
-		new_client->out_res_offset = 0;
+		// Allocate memory for a new struct client_info, and populate it with info for the new client
+		struct client_info *_new_client = (struct client_info *)malloc(sizeof(struct client_info));
+		_new_client->fd = connfd;
+		_new_client->in_req_offset = 0;
+		_new_client->out_req_offset = 0;
+		_new_client->in_res_offset = 0;
+		_new_client->out_res_offset = 0;
 
 		// Set up client's request buffers
-		char request[BIG_BUFF_SIZE], fwd[BIG_BUFF_SIZE];
+
+		char *request = (char *)malloc(BIG_BUFF_SIZE);
+		char *fwd = (char *)malloc(BIG_BUFF_SIZE);
 		memset(&request[0], 0, BIG_BUFF_SIZE);
 		memset(&fwd[0], 0, BIG_BUFF_SIZE);
-		new_client->in_buf_ptr = &request[0];
-		new_client->out_buf_ptr = &fwd[0];
+		_new_client->in_buf_ptr = &request[0];
+		_new_client->out_buf_ptr = &fwd[0];
 
 		// Set up client's response buffer
-		char response[BIG_BUFF_SIZE];
+		char *response = (char *)malloc(BIG_BUFF_SIZE);
 		memset(&response[0], 0, BIG_BUFF_SIZE);
-		new_client->res_ptr = &response[0];
+		_new_client->res_ptr = &response[0];
 
-		new_client->state = READ_REQUEST;
-		sprintf(new_client->desc, "Client with file descriptor %d", connfd);
+		_new_client->state = READ_REQUEST;
 
 		// Register the client file descriptor for incoming events using edge-triggered monitoring
-		event.data.ptr = new_client;
+		event.data.ptr = _new_client;
 		event.events = EPOLLIN | EPOLLET;
 		
 		if (epoll_ctl(_efd, EPOLL_CTL_ADD, connfd, &event) < 0) {
@@ -284,32 +263,34 @@ void handle_new_clients (int fd, int _efd) {
 			exit(1);
 		}
 
-		printf("New connfd: %d\n", connfd);
+		if (debug) printf("New connfd: %d\n", connfd);
 	}
 }
 
 void handle_client(struct client_info *client, int efd) {
 	if (client == NULL) return;
 
-	printf("Entering handle_client\nFD: %d\nState: %d\n",client->fd, client->state);
+	if (debug) printf("Entering handle_client, FD: %d, State: %d, ",client->fd, client->state);
 
 	if (client->state == READ_REQUEST) {
 		// START READ_REQUEST
-		printf("Entering READ_REQUEST\n");
+		if (debug) printf("Entering READ_REQUEST\n");
 		
-		int rtotal_read = 0;
+		// Read request from client
+		// int rtotal_read = 0;
 		int rbytes_read = 0;
 		int debug = 1;
 		do {
-			rbytes_read = recv(client->fd, client->in_buf_ptr + client->in_req_offset + rtotal_read, 512, 0);
-			printf("read loop -> rbytes_read=%d\n",rbytes_read);
+			rbytes_read = recv(client->fd, client->in_buf_ptr + client->in_req_offset, 512, 0);
+			if (debug) printf("read loop -> rbytes_read=%d\n",rbytes_read);
 			if (rbytes_read == 0){
 				break;
 			}
 			else if (rbytes_read < 0) {
 				if (errno == EAGAIN || errno == EWOULDBLOCK) {
 					// set offset
-					client->in_req_offset += rtotal_read;
+					// client->in_req_offset += rtotal_read;
+					if (debug) printf("returning, errno is %d\n",errno);
 					return;
 				}
 				else {
@@ -319,12 +300,12 @@ void handle_client(struct client_info *client, int efd) {
 					return;
 				}
 			}
-			rtotal_read += rbytes_read;
-		} while(!all_headers_received(client->in_buf_ptr) && rtotal_read < BIG_BUFF_SIZE);
-		client->in_buf_ptr[client->in_req_offset + rtotal_read] = 00;
+			client->in_req_offset += rbytes_read;
+		} while(!all_headers_received(client->in_buf_ptr) && (client->in_req_offset) < BIG_BUFF_SIZE);
+		client->in_buf_ptr[client->in_req_offset] = 00;
 
 		// Test parsing
-		if(debug) printf("Request Received: \n%s\n",client->in_buf_ptr);
+		//if(debug) printf("Request Received: \n%s\n",client->in_buf_ptr);
 		char method[16], hostname[64], port[8], path[64], headers[1024];
 		if(parse_request(client->in_buf_ptr, method, hostname, port, path, headers)) {
 			if(debug){
@@ -377,7 +358,7 @@ void handle_client(struct client_info *client, int efd) {
 		// End headers
 		strcat(client->out_buf_ptr, "\r\n");
 
-		if(debug) printf("New Request: \n%s\n", client->out_buf_ptr);
+		//if(debug) printf("New Request: \n%s\n", client->out_buf_ptr);
 
 		/// Create socket for communicating with server
 		int server_sfd2;
@@ -439,7 +420,7 @@ void handle_client(struct client_info *client, int efd) {
 		inet_ntop(addr_fam, &local_addr_in2.sin_addr, local_addr_str, addr_len2);
 
 		// Set listening file descriptor non-blocking
-		if (fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK) < 0) {
+		if (fcntl(server_sfd2, F_SETFL, fcntl(server_sfd2, F_GETFL, 0) | O_NONBLOCK) < 0) {
 			fprintf(stderr, "error setting socket option\n");
 			exit(1);
 		}
@@ -462,19 +443,20 @@ void handle_client(struct client_info *client, int efd) {
 			return;
 		}
 
+		if (debug) printf("Leaving READ_REQUEST\n");
 		// END READ_REQUEST
 	}
 	
 	else if (client->state == SEND_REQUEST) {
 		// START SEND_REQUEST
-		printf("Entering SEND_REQUEST\n");
+		if (debug) printf("Entering SEND_REQUEST\n");
 
 		// Send new http request to server
 		int total_sent = 0;
 		int bytes_sent = 0;
 		do {
-			if(strlen(client->out_buf_ptr) - total_sent < 512) {
-				bytes_sent = write(client->sfd, client->out_buf_ptr + total_sent, strlen(client->out_buf_ptr) - total_sent);
+			if(strlen(client->out_buf_ptr) - (client->out_req_offset + total_sent) < 512) {
+				bytes_sent = write(client->sfd, client->out_buf_ptr + client->out_req_offset + total_sent, strlen(client->out_buf_ptr) - (client->out_req_offset + total_sent));
 			}
 			else {
 				bytes_sent = write(client->sfd, client->out_buf_ptr + client->out_req_offset + total_sent, 512);
@@ -495,15 +477,15 @@ void handle_client(struct client_info *client, int efd) {
 			total_sent += bytes_sent;
 		} while(bytes_sent == 512 && (client->out_req_offset + total_sent) < strlen(client->out_buf_ptr));
 
-		// Deregister server file descriptor from epoll writing
-		if (epoll_ctl(efd, EPOLL_CTL_DEL, client->sfd, &event)< 0) {
-			perror("remove client from epoll writing");
-			return;
-		}
+		// // Deregister server file descriptor from epoll writing
+		// if (epoll_ctl(efd, EPOLL_CTL_DEL, client->sfd, &event)< 0) {
+		// 	perror("remove client from epoll writing");
+		// 	return;
+		// }
 		// Register server socket for epoll reading
 		event.data.ptr = client;
 		event.events = EPOLLIN | EPOLLET;
-		if (epoll_ctl(efd, EPOLL_CTL_ADD, client->sfd, &event) < 0) {
+		if (epoll_ctl(efd, EPOLL_CTL_MOD, client->sfd, &event) < 0) {
 			fprintf(stderr, "error adding event\n");
 			exit(EXIT_FAILURE);
 		}
@@ -511,11 +493,13 @@ void handle_client(struct client_info *client, int efd) {
 		// Set client state to "read server response"
 		client->state = READ_RESPONSE;
 
+		if (debug) printf("Leaving SEND_REQUEST\n");
 		// END SEND_REQUEST
 	}
 	
 	else if (client->state == READ_RESPONSE) {
 		// START READ_RESPONSE
+		if (debug) printf("Entering READ_RESPONSE\n");
 
 		// Read response from server
 		int restotal_read = 0;
@@ -526,22 +510,24 @@ void handle_client(struct client_info *client, int efd) {
 				// Increment inbound response offset, close server file descriptor
 				client->in_res_offset += restotal_read;
 				close(client->sfd);
-				printf("Response:\n%s\n",client->res_ptr);
+				//printf("Response:\n%s\n",client->res_ptr);
 				// Deregister client file descriptor from epoll reading
-				if (epoll_ctl(efd, EPOLL_CTL_DEL, client->fd, &event)< 0) {
-					perror("remove client from epoll reading");
-					return;
-				}
+				// if (epoll_ctl(efd, EPOLL_CTL_DEL, client->fd, &event)< 0) {
+				// 	perror("remove client from epoll reading");
+				// 	return;
+				// }
 				// Register client file descriptor for writing
 				event.data.ptr = client;
 				event.events = EPOLLOUT | EPOLLET;
-				if (epoll_ctl(efd, EPOLL_CTL_ADD, client->fd, &event) < 0) {
+				if (epoll_ctl(efd, EPOLL_CTL_MOD, client->fd, &event) < 0) {
 					perror("add event for writing");
 					return;
 				}
+
 				// Update client's state to "send response to client"
 				client->state = SEND_RESPONSE;
-				//handle_client(client, efd);
+				
+				if (debug) printf("Leaving READ_RESPONSE 1\n");
 				return;
 			}
 			else if (resbytes_read < 0) {
@@ -558,23 +544,23 @@ void handle_client(struct client_info *client, int efd) {
 				}
 			}
 			restotal_read += resbytes_read;
-		} while(resbytes_read > 0 && (client->in_res_offset + restotal_read) < BIG_BUFF_SIZE);
+		} while((client->in_res_offset + restotal_read) < BIG_BUFF_SIZE);
 
-		printf("Bytes read: %d\nResponse from server:\n%s\n", client->in_res_offset + restotal_read, client->res_ptr);
-		
+		if (debug) printf("Leaving READ_RESPONSE 2\n");
 		// END READ_RESPONSE
 	}
 	
 	else if (client->state == SEND_RESPONSE) {
 		// START SEND_RESPONSE
+		if (debug) printf("Entering SEND_RESPONSE\n");
 
 		int rtotal_sent = 0;
 		int rbytes_sent = 0;
 
 		// Forward server's response to client
 		do {
-			if(strlen(client->res_ptr) - rtotal_sent < 512) {
-				rbytes_sent = write(client->fd, client->res_ptr + client->out_res_offset + rtotal_sent, strlen(client->res_ptr) - rtotal_sent);
+			if(client->in_res_offset - rtotal_sent < 512) {
+				rbytes_sent = write(client->fd, client->res_ptr + client->out_res_offset + rtotal_sent, client->in_res_offset - (client->out_res_offset + rtotal_sent));
 			}
 			else {
 				rbytes_sent = write(client->fd, client->res_ptr + client->out_req_offset + rtotal_sent, 512);
@@ -593,14 +579,13 @@ void handle_client(struct client_info *client, int efd) {
 				}
 			}
 			rtotal_sent += rbytes_sent;
-		} while (rbytes_sent == 512 && (client->out_res_offset + rtotal_sent) < strlen(client->res_ptr));
-
+		} while ((client->out_res_offset + rtotal_sent) < client->in_res_offset);
+		
 		// Close client connection
 		close(client->fd);
 		free(client);
 
-		sleep(2);
-		
+		if (debug) printf("Leaving SEND_RESPONSE\n");
 		// END SEND_RESPONSE
 	}
 	
